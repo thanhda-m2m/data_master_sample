@@ -7,10 +7,10 @@ export async function proxy(request: NextRequest) {
   const hostname = request.headers.get('host') || ''
 
   // Extract tenant from subdomain
-  // e.g. testcogfix2.localhost:3000 → tenant = "testcogfix2"
-  // e.g. localhost:3000 → tenant = "testcogfix2" (fallback for testing)
+  // e.g. daoanhta.localhost:3000 → tenant = "daoanhta"
   const parts = hostname.split('.')
-  const tenant = parts.length > 2 ? parts[0] : 'testcogfix2'
+  const tenantCandidate = parts.length > 2 ? parts[0] : request.cookies.get('datamaster_tenant')?.value || ''
+  const tenant = /^[a-zA-Z0-9_-]{1,50}$/.test(tenantCandidate) ? tenantCandidate : ''
 
   // Validate session cookie
   const sessionCookie = request.cookies.get('session')?.value
@@ -49,6 +49,10 @@ export async function proxy(request: NextRequest) {
 
   // Protected routes - redirect to signin if no session
   if (!isLoggedIn) {
+    if (!tenant) {
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+
     const signinUrl = new URL('/api/auth/signin', request.url)
     signinUrl.searchParams.set('tenant', tenant)
     signinUrl.searchParams.set('callbackUrl', pathname)

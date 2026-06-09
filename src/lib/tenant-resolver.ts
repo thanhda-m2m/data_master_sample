@@ -61,7 +61,7 @@ export async function resolveTenantConfig(
   }
 
   const row = rows[0]
-  const smartiMateBaseUrl = process["env"]["SMARTIMATE_BASE_URL"] || 'https://smartimate.local'
+  const smartiMateBaseUrl = process["env"]["SMARTIMATE_BASE_URL"] || 'http://localhost:8080'
   const appClients = parseAppClientsJson(row.cognito_app_clients_json)
   const dataMasterClient = appClients.datamaster || {}
   const clientId =

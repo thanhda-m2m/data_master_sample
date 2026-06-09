@@ -10,9 +10,9 @@ export interface Session {
     name: string
   }
   tenant: string
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
+  accessToken?: string
+  refreshToken?: string
+  expiresAt?: number
 }
 
 export async function getSession(): Promise<Session | null> {
@@ -34,9 +34,9 @@ export async function getSession(): Promise<Session | null> {
         name: payload.name as string,
       },
       tenant: payload.tenant as string,
-      accessToken: payload.accessToken as string,
-      refreshToken: payload.refreshToken as string,
-      expiresAt: payload.expiresAt as number,
+      accessToken: typeof payload.accessToken === 'string' ? payload.accessToken : undefined,
+      refreshToken: typeof payload.refreshToken === 'string' ? payload.refreshToken : undefined,
+      expiresAt: typeof payload.expiresAt === 'number' ? payload.expiresAt : undefined,
     }
   } catch (error) {
     unstable_rethrow(error)

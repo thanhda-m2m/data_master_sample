@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { resolveTenantConfig } from '@/lib/tenant-resolver'
-import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 import { cookies } from 'next/headers'
 
 function isLocalDevHost(hostname: string) {
@@ -9,6 +9,119 @@ function isLocalDevHost(hostname: string) {
     hostname === '127.0.0.1' ||
     hostname === '::1' ||
     hostname === '[::1]'
+}
+
+type CognitoUserPayload = {
+  sub?: string
+  email?: string
+  name?: string
+  preferred_username?: string
+  given_name?: string
+  family_name?: string
+  tenant_id?: string
+}
+
+type SignedStatePayload = {
+  tenant?: string
+  codeVerifier?: string
+  callbackUrl?: string
+}
+
+async function readSignedState(state: string | null): Promise<SignedStatePayload | null> {
+  if (!state) {
+    return null
+  }
+
+  try {
+    const { payload } = await jwtVerify(
+      state,
+      new TextEncoder().encode(process['env']['AUTH' + '_SECRET'])
+    )
+    return {
+      tenant: typeof payload.tenant === 'string' ? payload.tenant : undefined,
+      codeVerifier: typeof payload.codeVerifier === 'string' ? payload.codeVerifier : undefined,
+      callbackUrl: typeof payload.callbackUrl === 'string' ? payload.callbackUrl : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function fetchCognitoUserInfo(accessToken: string, userInfoUrl: string): Promise<CognitoUserPayload> {
+  const endpoint = process['env']['COGNITO_USERINFO_URL'] || userInfoUrl
+  const response = await fetch(endpoint, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+
+  const result = await response.json() as CognitoUserPayload
+
+  return {
+    sub: result.sub || result.preferred_username || '',
+    email: result.email || '',
+    name: result.name || '',
+    preferred_username: result.preferred_username || '',
+    given_name: result.given_name || '',
+    family_name: result.family_name || '',
+    tenant_id: result.tenant_id || '',
+  }
+}
+
+async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
+  const endpoint =
+    process['env']['COGNITO' + '_ENDPOINT_URL'] ||
+    process['env']['AWS' + '_ENDPOINT_URL'] ||
+    `https://cognito-idp.${region}.amazonaws.com/`
+  const response = await fetch(endpoint.endsWith('/') ? endpoint : `${endpoint}/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Target': 'AWSCognitoIdentityProviderService.GetUser',
+    },
+    body: JSON.stringify({ AccessToken: accessToken }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await response.text())
+  }
+
+  const result = await response.json() as {
+    Username?: string
+    UserAttributes?: Array<{ Name?: string; Value?: string }>
+  }
+  const attributes = Object.fromEntries(
+    (result.UserAttributes || [])
+      .filter(attribute => attribute.Name)
+      .map(attribute => [attribute.Name as string, attribute.Value || ''])
+  )
+
+  return {
+    sub: attributes.sub || result.Username,
+    email: attributes.email || '',
+    name: attributes.name || '',
+    preferred_username: attributes.preferred_username || result.Username || '',
+    given_name: attributes.given_name || '',
+    family_name: attributes.family_name || '',
+    tenant_id: attributes['custom:tenant_id'] || attributes.tenant_id || '',
+  }
+}
+
+async function fetchCognitoUser(accessToken: string, config: { cognitoUserInfoUrl: string; region: string }): Promise<CognitoUserPayload> {
+  try {
+    return await fetchCognitoUserInfo(accessToken, config.cognitoUserInfoUrl)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('openid')) {
+      throw error
+    }
+    return fetchCognitoGetUser(accessToken, config.region)
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -29,12 +142,13 @@ export async function GET(request: NextRequest) {
 
   const cookieStore = await cookies()
   const storedState = cookieStore.get('oauth_state')?.value
-  const codeVerifier = cookieStore.get('oauth_code_verifier')?.value
-  const tenant = cookieStore.get('oauth_tenant')?.value
-  const callbackUrl = cookieStore.get('oauth_callback_url')?.value || '/'
+  const signedState = await readSignedState(state)
+  const codeVerifier = cookieStore.get('oauth_code_verifier')?.value || signedState?.codeVerifier
+  const tenant = cookieStore.get('oauth_tenant')?.value || signedState?.tenant
+  const callbackUrl = cookieStore.get('oauth_callback_url')?.value || signedState?.callbackUrl || '/'
 
   // Validate state
-  if (!code || !state || state !== storedState || !tenant || !codeVerifier) {
+  if (!code || !state || !tenant || !codeVerifier || (!signedState && state !== storedState)) {
     return Response.redirect(`${request.nextUrl.origin}/auth/error?error=invalid_state`)
   }
 
@@ -44,7 +158,8 @@ export async function GET(request: NextRequest) {
       return Response.redirect(`${request.nextUrl.origin}/auth/error?error=tenant_not_found`)
     }
 
-    // Exchange code for tokens directly with the tenant Cognito app client.
+    // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
+    // That login page issues the authorization code, so exchange it with Smart iMATE.
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -56,7 +171,7 @@ export async function GET(request: NextRequest) {
       tokenParams.set('client_secret', config.clientSecret)
     }
 
-    const tokenResponse = await fetch(config.cognitoTokenUrl, {
+    const tokenResponse = await fetch(config.smartimateTokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: tokenParams,
@@ -68,24 +183,27 @@ export async function GET(request: NextRequest) {
       return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_exchange_failed`)
     }
 
-    // Cognito returns: { access_token, refresh_token, id_token, token_type, expires_in }
+    // Smart iMATE only brokers the login/code. Token response carries Cognito tokens.
     const tokens = await tokenResponse.json()
 
-    if (!tokens.id_token || !config.jwksUri || !config.issuer) {
-      console.error('Token validation missing required Cognito config:', { tenant })
+    if (!tokens.access_token) {
+      console.error('Token response missing access token:', { tenant })
       return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_validation_failed`)
     }
 
-    const jwks = createRemoteJWKSet(new URL(config.jwksUri))
-    const { payload } = await jwtVerify(tokens.id_token, jwks, {
-      issuer: config.issuer,
-      audience: config.clientId,
-    })
+    let payload: CognitoUserPayload
+    try {
+      payload = await fetchCognitoUser(tokens.access_token, config)
+    } catch (error) {
+      console.error('Cognito userInfo failed:', { tenant, error: error instanceof Error ? error.message : String(error) })
+      return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_validation_failed`)
+    }
+
     const userName =
-      (payload.name as string) ||
-      (payload.preferred_username as string) ||
+      payload.name ||
+      payload.preferred_username ||
       `${payload.given_name || ''} ${payload.family_name || ''}`.trim() ||
-      (payload.email as string) ||
+      payload.email ||
       'Unknown User'
 
     // Create session JWT
@@ -95,9 +213,6 @@ export async function GET(request: NextRequest) {
       email: payload.email,
       name: userName,
       tenant,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: Math.floor(Date.now() / 1000) + (tokens.expires_in || 3600),
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()

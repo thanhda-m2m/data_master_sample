@@ -1,7 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { listTenants } from '@/lib/tenant-resolver'
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 
 export default async function Home() {
   const session = await getSession()
@@ -25,12 +24,12 @@ export default async function Home() {
               <span className="text-sm text-gray-500 min-w-[80px] text-right">
                 {tenant.bcname || tenant.compname || `Tenant ${tenant.bkid}`}
               </span>
-              <Link
+              <a
                 href={`/api/auth/signin?tenant=${tenant.loginId}`}
                 className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700 font-medium"
               >
                 Sign In
-              </Link>
+              </a>
             </div>
           ))}
           {tenants.length === 0 && (
