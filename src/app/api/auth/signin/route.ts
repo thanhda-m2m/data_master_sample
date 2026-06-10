@@ -74,7 +74,16 @@ export async function GET(request: NextRequest) {
         const dataMasterOrigin = buildDataMasterOrigin(request)
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
 
-        // Smart iMATE owns the tenant login page, then forwards this broker request to Cognito.
+        // Smart iMATE login.php is the entry point for authentication
+        // Flow:
+        // 1. Redirect to /{tenant}/login.php with OAuth params (client_id, redirect_uri, state, code_challenge)
+        // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
+        // 3. login.php stores Cognito tokens in session
+        // 4. login.php redirects to /oauth/authorize with same OAuth params
+        // 5. /oauth/authorize generates auth code JWT, links Cognito tokens from session
+        // 6. /oauth/authorize redirects back to DataMaster callback with code
+        // 7. DataMaster exchanges code at /oauth/token
+        // 8. /oauth/token returns Cognito tokens (access_token, id_token, refresh_token)
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
         authUrl.searchParams.set('app', 'datamaster')
         authUrl.searchParams.set('client_id', config.clientId)

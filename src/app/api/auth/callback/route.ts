@@ -159,7 +159,11 @@ export async function GET(request: NextRequest) {
     }
 
     // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
-    // That login page issues the authorization code, so exchange it with Smart iMATE.
+    // login.php authenticates via Cognito USER_PASSWORD_AUTH, stores Cognito tokens in session.
+    // Then login.php redirects to /oauth/authorize which generates the auth code JWT.
+    // /oauth/authorize links the Cognito tokens (from session) to the auth code JWT.
+    // Now we exchange the auth code with Smart iMATE /oauth/token endpoint.
+    // /oauth/token validates the auth code JWT and returns the linked Cognito tokens.
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -183,7 +187,9 @@ export async function GET(request: NextRequest) {
       return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_exchange_failed`)
     }
 
-    // Smart iMATE only brokers the login/code. Token response carries Cognito tokens.
+    // Token response contains Cognito tokens (access_token, id_token, refresh_token)
+    // These are the actual Cognito tokens, NOT Smart iMATE JWT tokens
+    // Smart iMATE only brokered the authentication and code exchange
     const tokens = await tokenResponse.json()
 
     if (!tokens.access_token) {
