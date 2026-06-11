@@ -11,7 +11,7 @@ interface SsoButtonProps {
 
 export function SsoButton({ target, tenant, accessToken, label }: SsoButtonProps) {
   const [loading, setLoading] = useState(false)
-  const buttonText = label || `Login to ${target === 'smartimate' ? 'Smart iMATE' : 'DataMaster'}`
+  const buttonText = label || `${target === 'smartimate' ? 'Smart iMATE' : 'DataMaster'}にログイン`
 
   async function handleClick() {
     setLoading(true)
@@ -46,7 +46,7 @@ export function SsoButton({ target, tenant, accessToken, label }: SsoButtonProps
       disabled={loading}
       className="cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50"
     >
-      {loading ? 'Connecting...' : buttonText}
+      {loading ? '接続中...' : buttonText}
     </button>
   )
 }

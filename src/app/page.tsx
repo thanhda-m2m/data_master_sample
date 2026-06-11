@@ -14,9 +14,9 @@ export default async function Home() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="text-center space-y-6">
-        <h1 className="text-4xl font-bold text-gray-900">Data Master Sample</h1>
+        <h1 className="text-4xl font-bold text-gray-900">データマスター サンプル</h1>
         <p className="text-lg text-gray-600">
-          POC for Smart iMATE OAuth integration with Cognito
+          Smart iMATE OAuth統合とCognitoのPOC
         </p>
         <div className="space-y-3">
           {tenants.map(tenant => (
@@ -28,12 +28,12 @@ export default async function Home() {
                 href={`/api/auth/signin?tenant=${tenant.loginId}`}
                 className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700 font-medium"
               >
-                Sign In
+                サインイン
               </a>
             </div>
           ))}
           {tenants.length === 0 && (
-            <p className="text-sm text-red-500">No tenants with SSO enabled found.</p>
+            <p className="text-sm text-red-500">SSOが有効なテナントが見つかりません。</p>
           )}
         </div>
       </div>
