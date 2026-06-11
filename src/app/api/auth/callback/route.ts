@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveTenantConfig } from '@/lib/tenant-resolver'
+import { resolveTenantConfig } from '@/lib/env-config'
 import { jwtVerify, SignJWT } from 'jose'
 import { cookies } from 'next/headers'
 
@@ -160,10 +160,10 @@ export async function GET(request: NextRequest) {
 
     // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
     // login.php authenticates via Cognito USER_PASSWORD_AUTH, stores Cognito tokens in session.
-    // Then login.php redirects to /oauth/authorize which generates the auth code JWT.
-    // /oauth/authorize links the Cognito tokens (from session) to the auth code JWT.
-    // Now we exchange the auth code with Smart iMATE /oauth/token endpoint.
-    // /oauth/token validates the auth code JWT and returns the linked Cognito tokens.
+    // Then login.php redirects to /oauth2/authorize which generates the auth code JWT.
+    // /oauth2/authorize links the Cognito tokens (from session) to the auth code JWT.
+    // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
+    // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -212,13 +212,14 @@ export async function GET(request: NextRequest) {
       payload.email ||
       'Unknown User'
 
-    // Create session JWT
+    // Keep the browser session cookie small. Raw Cognito tokens can exceed cookie limits.
     const secret = new TextEncoder().encode(process.env.AUTH_SECRET)
     const sessionToken = await new SignJWT({
       sub: payload.sub,
       email: payload.email,
       name: userName,
       tenant,
+      expiresAt: Math.floor(Date.now() / 1000) + Number(tokens.expires_in || 3600) - 60,
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()

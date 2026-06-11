@@ -1,4 +1,4 @@
-import { listTenants, resolveTenantConfig } from '@/lib/tenant-resolver'
+import { listTenants, resolveTenantConfig } from '@/lib/env-config'
 
 export async function GET(request: Request) {
   try {

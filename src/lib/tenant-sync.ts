@@ -1,6 +1,3 @@
-import { query } from './db'
-import { clearTenantCache } from './tenant-resolver'
-
 type TenantSyncBody = {
   login_id?: string
   tenant_id?: string
@@ -9,8 +6,6 @@ type TenantSyncBody = {
   issuer?: string
   clientId?: string
   client_id?: string
-  clientSecret?: string
-  client_secret?: string
   region?: string
   cognito_region?: string
   authorization_endpoint?: string
@@ -51,11 +46,9 @@ export async function syncTenantProvider(body: TenantSyncBody) {
   const loginId = body.login_id || body.tenant_id || ''
   const userPoolId = parseUserPoolId(body)
   const region = parseRegion(body)
-  const clientId = body.clientId || body.client_id || ''
-  const clientSecret = body.clientSecret || body.client_secret || ''
 
-  if (!loginId || !userPoolId || !clientId) {
-    throw new Error('login_id/tenant_id, userPoolId/issuer, and clientId/client_id required')
+  if (!loginId || !userPoolId) {
+    throw new Error('login_id/tenant_id and userPoolId/issuer required')
   }
 
   if (!/^[a-zA-Z0-9_-]{1,50}$/.test(loginId)) {
@@ -66,42 +59,5 @@ export async function syncTenantProvider(body: TenantSyncBody) {
     throw new Error('Invalid userPoolId format')
   }
 
-  await query(
-    `INSERT INTO bkmasters (
-       login_id,
-       userPoolId,
-       cognito_app_client_id,
-       cognito_region,
-       cognito_enabled,
-       smartimate_authorize_url,
-       smartimate_token_url,
-       smartimate_validate_url,
-       client_secret
-     )
-     VALUES (?, ?, ?, ?, true, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       userPoolId = VALUES(userPoolId),
-       cognito_app_client_id = VALUES(cognito_app_client_id),
-       cognito_region = VALUES(cognito_region),
-       cognito_enabled = true,
-       smartimate_authorize_url = VALUES(smartimate_authorize_url),
-       smartimate_token_url = VALUES(smartimate_token_url),
-       smartimate_validate_url = VALUES(smartimate_validate_url),
-       client_secret = VALUES(client_secret),
-       updated_at = NOW()`,
-    [
-      loginId,
-      userPoolId,
-      clientId,
-      region,
-      body.authorization_endpoint || '',
-      body.token_endpoint || '',
-      body.userinfo_endpoint || body.jwks_uri || '',
-      clientSecret,
-    ]
-  )
-
-  clearTenantCache(loginId)
-
-  return { synced: true, login_id: loginId }
+  return { synced: false, env_configured: true, login_id: loginId, userPoolId, region }
 }

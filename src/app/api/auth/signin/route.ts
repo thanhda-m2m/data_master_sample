@@ -1,5 +1,5 @@
 import {NextRequest, NextResponse} from 'next/server'
-import {resolveTenantConfig} from '@/lib/tenant-resolver'
+import {resolveTenantConfig} from '@/lib/env-config'
 import {randomBytes, createHash} from 'crypto'
 import {SignJWT} from 'jose'
 
@@ -79,11 +79,11 @@ export async function GET(request: NextRequest) {
         // 1. Redirect to /{tenant}/login.php with OAuth params (client_id, redirect_uri, state, code_challenge)
         // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
         // 3. login.php stores Cognito tokens in session
-        // 4. login.php redirects to /oauth/authorize with same OAuth params
-        // 5. /oauth/authorize generates auth code JWT, links Cognito tokens from session
-        // 6. /oauth/authorize redirects back to DataMaster callback with code
-        // 7. DataMaster exchanges code at /oauth/token
-        // 8. /oauth/token returns Cognito tokens (access_token, id_token, refresh_token)
+        // 4. login.php redirects to /oauth2/authorize with same OAuth params
+        // 5. /oauth2/authorize generates auth code JWT, links Cognito tokens from session
+        // 6. /oauth2/authorize redirects back to DataMaster callback with code
+        // 7. DataMaster exchanges code at /oauth2/token
+        // 8. /oauth2/token returns Cognito tokens (access_token, id_token, refresh_token)
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
         authUrl.searchParams.set('app', 'datamaster')
         authUrl.searchParams.set('client_id', config.clientId)

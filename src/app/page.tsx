@@ -1,5 +1,5 @@
 import { getSession } from '@/lib/auth'
-import { listTenants } from '@/lib/tenant-resolver'
+import { listTenants } from '@/lib/env-config'
 import { redirect } from 'next/navigation'
 
 export default async function Home() {
