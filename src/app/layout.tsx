@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { FireworksBanner } from "@/components/fireworks-banner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SSO PoC",
-  description: "SSO PoC",
+  title: "DataMaster SSO",
+  description: "Enterprise SSO Authentication Gateway",
 };
 
 export default function RootLayout({
@@ -24,11 +25,14 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="ja"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>{children}</body>
+      <body className="min-h-full flex flex-col bg-slate-50" suppressHydrationWarning>
+        <FireworksBanner />
+        {children}
+      </body>
     </html>
   );
 }

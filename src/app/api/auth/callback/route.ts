@@ -228,7 +228,9 @@ export async function GET(request: NextRequest) {
 
     // Set session cookie and clear OAuth cookies
     const isDev = isLocalDevHost(request.nextUrl.hostname)
-    const response = NextResponse.redirect(`${request.nextUrl.origin}${callbackUrl}`)
+    const redirectUrlObj = new URL(`${request.nextUrl.origin}${callbackUrl}`)
+    redirectUrlObj.searchParams.set('sso_success', 'true')
+    const response = NextResponse.redirect(redirectUrlObj)
     response.cookies.set('session', sessionToken, {
       path: '/',
       httpOnly: true,
