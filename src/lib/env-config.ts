@@ -83,7 +83,7 @@ export async function resolveTenantConfig(tenantCode: string): Promise<TenantCon
     cognitoUserInfoUrl: envValue('COGNITO_USERINFO_URL') || `${hostedUiBaseUrl}/oauth2/userInfo`,
     jwksUri: envValue('COGNITO_JWKS_URI') || (issuer ? `${issuer}/.well-known/jwks.json` : ''),
     smartimateAuthorizeUrl: envValue('SMARTIMATE_AUTHORIZE_URL') || `${smartiMateBaseUrl}/oauth2/authorize`,
-    smartimateTokenUrl: envValue('SMARTIMATE_TOKEN_URL') || `${smartiMateBaseUrl}/oauth/token`,
+    smartimateTokenUrl: envValue('SMARTIMATE_TOKEN_URL') || `${smartiMateBaseUrl}/oauth2/token`,
     smartimateValidateUrl: envValue('SMARTIMATE_VALIDATE_URL') || `${smartiMateBaseUrl}/oauth2/validate`,
   }
 }
