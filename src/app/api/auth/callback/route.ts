@@ -6,6 +6,7 @@ import { cookies } from 'next/headers'
 import { logAuditEvent } from '@/lib/audit-log'
 import { detectTenant } from '@/lib/tenant-detection'
 import { isLocalDev } from '@/lib/url-builder'
+import { resolveRequestOrigin } from '@/lib/request-origin'
 
 type CognitoUserPayload = {
   sub?: string
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   const providerError = searchParams.get('error')
   const providerErrorDescription = searchParams.get('error_description')
+  const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
 
   // Detect tenant from subdomain first
   const { tenantCode: subdomainTenant } = detectTenant(
@@ -157,11 +159,11 @@ export async function GET(request: NextRequest) {
   // Validate tenant consistency
   if (subdomainTenant && stateTenant && subdomainTenant !== stateTenant) {
     logAuditEvent('validation_failure', tenant || 'unknown', request.headers, { error: 'tenant_mismatch_subdomain' })
-    return Response.redirect(new URL('/auth/error?error=tenant_mismatch', request.nextUrl.origin))
+    return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
   }
 
   if (providerError) {
-    const errorUrlObj = new URL('/auth/error', request.nextUrl.origin)
+    const errorUrlObj = new URL('/auth/error', requestOrigin)
     errorUrlObj.searchParams.set('error', providerError)
     if (providerErrorDescription) {
       errorUrlObj.searchParams.set('error_description', providerErrorDescription)
@@ -172,19 +174,19 @@ export async function GET(request: NextRequest) {
   // Validate state
   if (!code || !state || !tenant || !codeVerifier || (!signedState && state !== storedState)) {
     logAuditEvent('validation_failure', tenant || 'unknown', request.headers, { error: 'invalid_state' })
-    return Response.redirect(new URL('/auth/error?error=invalid_state', request.nextUrl.origin))
+    return Response.redirect(new URL('/auth/error?error=invalid_state', requestOrigin))
   }
 
   try {
     if (cookieTenant && cookieTenant !== stateTenant) {
       logAuditEvent('validation_failure', tenant, request.headers, { error: 'tenant_mismatch' })
-      return Response.redirect(new URL('/auth/error?error=tenant_mismatch', request.nextUrl.origin))
+      return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
     }
 
     const config = await resolveTenantConfigFromDb(tenant) ?? await resolveTenantConfig(tenant)
     if (!config) {
       logAuditEvent('validation_failure', tenant, request.headers, { error: 'tenant_not_found' })
-      return Response.redirect(new URL('/auth/error?error=tenant_not_found', request.nextUrl.origin))
+      return Response.redirect(new URL('/auth/error?error=tenant_not_found', requestOrigin))
     }
 
     console.log('[CALLBACK] Tenant config:', {
@@ -199,7 +201,7 @@ export async function GET(request: NextRequest) {
     // /oauth2/authorize links the Cognito tokens (from session) to the auth code JWT.
     // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
     // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
-    const redirectUri = `${request.nextUrl.origin}/api/auth/callback`
+    const redirectUri = `${requestOrigin}/api/auth/callback`
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -220,7 +222,7 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text()
       console.error('Token exchange failed:', { tenant, error })
-      return Response.redirect(new URL('/auth/error?error=token_exchange_failed', request.nextUrl.origin))
+      return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
     }
 
     // Token response contains Cognito tokens (access_token, id_token, refresh_token)
@@ -230,7 +232,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokens.access_token) {
       console.error('Token response missing access token:', { tenant })
-      return Response.redirect(new URL('/auth/error?error=token_validation_failed', request.nextUrl.origin))
+      return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
     }
 
     let payload: CognitoUserPayload
@@ -272,7 +274,7 @@ export async function GET(request: NextRequest) {
       payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
     } catch (error) {
       console.error('Cognito userInfo failed:', { tenant, error: error instanceof Error ? error.message : String(error) })
-      return Response.redirect(new URL('/auth/error?error=token_validation_failed', request.nextUrl.origin))
+      return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
     }
 
     const userName =
@@ -299,7 +301,7 @@ export async function GET(request: NextRequest) {
     // Set session cookie and clear OAuth cookies
     // No subdomain redirect - stay on base domain
     const isDev = isLocalDev()
-    const redirectUrlObj = new URL(callbackUrl, request.nextUrl.origin)
+    const redirectUrlObj = new URL(callbackUrl, requestOrigin)
     redirectUrlObj.searchParams.set('sso_success', 'true')
     const response = NextResponse.redirect(redirectUrlObj)
     response.cookies.set('session', sessionToken, {
@@ -323,6 +325,6 @@ export async function GET(request: NextRequest) {
       error: error instanceof Error ? error.message : String(error),
     })
     console.error('Callback error:', { tenant, error: error instanceof Error ? error.message : String(error) })
-    return Response.redirect(new URL('/auth/error?error=internal_error', request.nextUrl.origin))
+    return Response.redirect(new URL('/auth/error?error=internal_error', requestOrigin))
   }
 }

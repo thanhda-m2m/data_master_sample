@@ -6,6 +6,7 @@ import {SignJWT} from 'jose'
 import {logAuditEvent} from '@/lib/audit-log'
 import {resolveSigninTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
+import {resolveRequestOrigin} from '@/lib/request-origin'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
     const normalizedBase = baseUrl.replace(/\/+$/, '')
@@ -73,8 +74,8 @@ export async function GET(request: NextRequest) {
 
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
 
-        // Use base domain redirect_uri (no subdomain)
-        const redirectUri = `${request.nextUrl.origin}/api/auth/callback`
+        const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
+        const redirectUri = `${requestOrigin}/api/auth/callback`
         console.log('[SIGNIN] Redirecting to Smart iMATE:', {smartiMateBaseUrl, redirectUri})
 
         // Smart iMATE login.php is the entry point for authentication
