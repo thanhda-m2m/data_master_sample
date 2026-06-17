@@ -22,6 +22,11 @@ describe('tenant-resolver', () => {
     delete process.env[cognitoKey('COGNITO', 'AUTHORIZE', 'URL')]
     delete process.env[cognitoKey('COGNITO', 'TOKEN', 'URL')]
     delete process.env[cognitoKey('COGNITO', 'USERINFO', 'URL')]
+    delete process['env']['SMARTIMATE_BASE_URL']
+    delete process['env']['SMARTIMATE_INTERNAL_BASE_URL']
+    delete process['env']['SMARTIMATE_AUTHORIZE_URL']
+    delete process['env']['SMARTIMATE_TOKEN_URL']
+    delete process['env']['SMARTIMATE_VALIDATE_URL']
   })
 
   describe('resolveTenantConfigFromDb', () => {
@@ -58,6 +63,58 @@ describe('tenant-resolver', () => {
       expect(config?.cognitoUserInfoUrl).toBe(config?.userInfoUrl)
       expect(config?.jwksUri).toContain('/.well-known/jwks.json')
       expect(config?.smartimateTokenUrl).toContain('/oauth2/token')
+    })
+
+    it('routes backend Smart iMATE calls through the private base URL', async () => {
+      process['env']['SMARTIMATE_BASE_URL'] = 'https://smartimate.example.com/'
+      process['env']['SMARTIMATE_INTERNAL_BASE_URL'] = 'http://10.0.12.34:8080/'
+      vi.mocked(db.query).mockResolvedValueOnce([
+        {
+          bkid: 1,
+          loginid: 'private-route',
+          bcname: 'Private Route Tenant',
+          cognito_credentials: JSON.stringify({
+            datamaster: {
+              app_client_id: 'private-client-id',
+              app_client_secret: 'private-client-secret',
+            },
+          }),
+          cognito_region: 'ap-northeast-1',
+          userPoolId: 'ap-northeast-1_PrivatePool',
+        },
+      ])
+
+      const config = await resolveTenantConfigFromDb('private-route')
+
+      expect(config?.smartimateAuthorizeUrl).toBe('https://smartimate.example.com/oauth2/authorize')
+      expect(config?.smartimateTokenUrl).toBe('http://10.0.12.34:8080/oauth2/token')
+      expect(config?.smartimateValidateUrl).toBe('http://10.0.12.34:8080/oauth2/validate')
+    })
+
+    it('preserves explicit backend endpoint overrides', async () => {
+      process['env']['SMARTIMATE_INTERNAL_BASE_URL'] = 'http://10.0.12.34:8080'
+      process['env']['SMARTIMATE_TOKEN_URL'] = 'http://10.0.20.10/internal/token'
+      process['env']['SMARTIMATE_VALIDATE_URL'] = 'http://10.0.20.11/internal/validate'
+      vi.mocked(db.query).mockResolvedValueOnce([
+        {
+          bkid: 1,
+          loginid: 'endpoint-overrides',
+          bcname: 'Endpoint Override Tenant',
+          cognito_credentials: JSON.stringify({
+            datamaster: {
+              app_client_id: 'override-client-id',
+              app_client_secret: 'override-client-secret',
+            },
+          }),
+          cognito_region: 'ap-northeast-1',
+          userPoolId: 'ap-northeast-1_OverridePool',
+        },
+      ])
+
+      const config = await resolveTenantConfigFromDb('endpoint-overrides')
+
+      expect(config?.smartimateTokenUrl).toBe('http://10.0.20.10/internal/token')
+      expect(config?.smartimateValidateUrl).toBe('http://10.0.20.11/internal/validate')
     })
 
     it('uses hosted UI URLs for OAuth endpoints while preserving the user-pool issuer', async () => {

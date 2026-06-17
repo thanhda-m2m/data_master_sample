@@ -16,6 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Smart iMATE Network Routing
+
+Use separate public and private addresses when DataMaster and Smart iMATE share a VPC:
+
+```text
+SMARTIMATE_BASE_URL=https://smartimate.example.com
+SMARTIMATE_INTERNAL_BASE_URL=http://10.0.12.34:8080
+```
+
+Browser login redirects use `SMARTIMATE_BASE_URL`. DataMaster backend token exchange and validation use `SMARTIMATE_INTERNAL_BASE_URL`.
+
+`SMARTIMATE_TOKEN_URL` and `SMARTIMATE_VALIDATE_URL` can still override individual backend endpoints. If the internal base is unset, backend calls fall back to the public base.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

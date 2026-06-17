@@ -145,11 +145,13 @@ function buildOAuthUrls(region: string, userPoolId: string) {
 }
 
 function buildSmartiMateUrls() {
-  const smartiMateBaseUrl = envValue('SMARTIMATE_BASE_URL') || 'http://localhost:8080'
+  const publicBaseUrl = (envValue('SMARTIMATE_BASE_URL') || 'http://localhost:8080').replace(/\/+$/, '')
+  const internalBaseUrl = (envValue('SMARTIMATE_INTERNAL_BASE_URL') || publicBaseUrl).replace(/\/+$/, '')
+
   return {
-    smartimateAuthorizeUrl: envValue('SMARTIMATE_AUTHORIZE_URL') || `${smartiMateBaseUrl}/oauth2/authorize`,
-    smartimateTokenUrl: envValue('SMARTIMATE_TOKEN_URL') || `${smartiMateBaseUrl}/oauth2/token`,
-    smartimateValidateUrl: envValue('SMARTIMATE_VALIDATE_URL') || `${smartiMateBaseUrl}/oauth2/validate`,
+    smartimateAuthorizeUrl: envValue('SMARTIMATE_AUTHORIZE_URL') || `${publicBaseUrl}/oauth2/authorize`,
+    smartimateTokenUrl: envValue('SMARTIMATE_TOKEN_URL') || `${internalBaseUrl}/oauth2/token`,
+    smartimateValidateUrl: envValue('SMARTIMATE_VALIDATE_URL') || `${internalBaseUrl}/oauth2/validate`,
   }
 }
 
