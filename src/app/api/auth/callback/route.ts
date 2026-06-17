@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveTenantConfigFromDb } from '@/lib/tenant-resolver'
 import { resolveTenantConfig } from '@/lib/env-config'
 import { jwtVerify, SignJWT } from 'jose'
 import { cookies } from 'next/headers'
-
-function isLocalDevHost(hostname: string) {
-  return hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname === '[::1]'
-}
+import { logAuditEvent } from '@/lib/audit-log'
+import { detectTenant } from '@/lib/tenant-detection'
+import { buildTenantSubdomainUrl, extractBaseDomain, isLocalDev } from '@/lib/url-builder'
 
 type CognitoUserPayload = {
   sub?: string
@@ -131,31 +127,70 @@ export async function GET(request: NextRequest) {
   const providerError = searchParams.get('error')
   const providerErrorDescription = searchParams.get('error_description')
 
-  if (providerError) {
-    const errorUrl = new URL('/auth/error', request.nextUrl.origin)
-    errorUrl.searchParams.set('error', providerError)
-    if (providerErrorDescription) {
-      errorUrl.searchParams.set('error_description', providerErrorDescription)
-    }
-    return Response.redirect(errorUrl)
-  }
+  // Detect tenant from subdomain first
+  const { tenantCode: subdomainTenant } = detectTenant(
+    request.headers.get('host') || ''
+  )
 
   const cookieStore = await cookies()
-  const storedState = cookieStore.get('oauth_state')?.value
   const signedState = await readSignedState(state)
-  const codeVerifier = cookieStore.get('oauth_code_verifier')?.value || signedState?.codeVerifier
-  const tenant = cookieStore.get('oauth_tenant')?.value || signedState?.tenant
-  const callbackUrl = cookieStore.get('oauth_callback_url')?.value || signedState?.callbackUrl || '/'
+  const stateTenant = signedState?.tenant
+  const storedState = stateTenant ? cookieStore.get(`oauth_state_${stateTenant}`)?.value : undefined
+  const codeVerifier = stateTenant
+    ? cookieStore.get(`oauth_code_verifier_${stateTenant}`)?.value || signedState?.codeVerifier
+    : signedState?.codeVerifier
+  const cookieTenant = stateTenant ? cookieStore.get(`oauth_tenant_${stateTenant}`)?.value : undefined
+
+  // Priority: subdomain > state JWT > cookie
+  const tenant = subdomainTenant || stateTenant || cookieTenant
+
+  const callbackUrl = stateTenant
+    ? cookieStore.get(`oauth_callback_url_${stateTenant}`)?.value || signedState?.callbackUrl || '/'
+    : signedState?.callbackUrl || '/'
+
+  // Validate tenant consistency
+  if (subdomainTenant && stateTenant && subdomainTenant !== stateTenant) {
+    logAuditEvent('validation_failure', tenant || 'unknown', request.headers, { error: 'tenant_mismatch_subdomain' })
+    return Response.redirect(
+      buildTenantSubdomainUrl(stateTenant, '/auth/error?error=tenant_mismatch')
+    )
+  }
+
+  if (providerError) {
+    const errorUrl = buildTenantSubdomainUrl(
+      tenant || 'unknown',
+      '/auth/error'
+    )
+    const errorUrlObj = new URL(errorUrl)
+    errorUrlObj.searchParams.set('error', providerError)
+    if (providerErrorDescription) {
+      errorUrlObj.searchParams.set('error_description', providerErrorDescription)
+    }
+    return Response.redirect(errorUrlObj)
+  }
 
   // Validate state
   if (!code || !state || !tenant || !codeVerifier || (!signedState && state !== storedState)) {
-    return Response.redirect(`${request.nextUrl.origin}/auth/error?error=invalid_state`)
+    logAuditEvent('validation_failure', tenant || 'unknown', request.headers, { error: 'invalid_state' })
+    return Response.redirect(
+      buildTenantSubdomainUrl(tenant || 'unknown', '/auth/error?error=invalid_state')
+    )
   }
 
   try {
-    const config = await resolveTenantConfig(tenant)
+    if (cookieTenant && cookieTenant !== stateTenant) {
+      logAuditEvent('validation_failure', tenant, request.headers, { error: 'tenant_mismatch' })
+      return Response.redirect(
+        buildTenantSubdomainUrl(tenant, '/auth/error?error=tenant_mismatch')
+      )
+    }
+
+    const config = await resolveTenantConfigFromDb(tenant) ?? await resolveTenantConfig(tenant)
     if (!config) {
-      return Response.redirect(`${request.nextUrl.origin}/auth/error?error=tenant_not_found`)
+      logAuditEvent('validation_failure', tenant, request.headers, { error: 'tenant_not_found' })
+      return Response.redirect(
+        buildTenantSubdomainUrl(tenant, '/auth/error?error=tenant_not_found')
+      )
     }
 
     // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
@@ -164,11 +199,12 @@ export async function GET(request: NextRequest) {
     // /oauth2/authorize links the Cognito tokens (from session) to the auth code JWT.
     // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
     // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
+    const redirectUri = buildTenantSubdomainUrl(tenant, '/api/auth/callback')
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
       code,
-      redirect_uri: `${request.nextUrl.origin}/api/auth/callback`,
+      redirect_uri: redirectUri,
       code_verifier: codeVerifier,
     })
     if (config.clientSecret) {
@@ -184,7 +220,9 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text()
       console.error('Token exchange failed:', { tenant, error })
-      return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_exchange_failed`)
+      return Response.redirect(
+        buildTenantSubdomainUrl(tenant, '/auth/error?error=token_exchange_failed')
+      )
     }
 
     // Token response contains Cognito tokens (access_token, id_token, refresh_token)
@@ -194,7 +232,9 @@ export async function GET(request: NextRequest) {
 
     if (!tokens.access_token) {
       console.error('Token response missing access token:', { tenant })
-      return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_validation_failed`)
+      return Response.redirect(
+        buildTenantSubdomainUrl(tenant, '/auth/error?error=token_validation_failed')
+      )
     }
 
     let payload: CognitoUserPayload
@@ -202,7 +242,9 @@ export async function GET(request: NextRequest) {
       payload = await fetchCognitoUser(tokens.access_token, config)
     } catch (error) {
       console.error('Cognito userInfo failed:', { tenant, error: error instanceof Error ? error.message : String(error) })
-      return Response.redirect(`${request.nextUrl.origin}/auth/error?error=token_validation_failed`)
+      return Response.redirect(
+        buildTenantSubdomainUrl(tenant, '/auth/error?error=token_validation_failed')
+      )
     }
 
     const userName =
@@ -227,25 +269,41 @@ export async function GET(request: NextRequest) {
       .sign(secret)
 
     // Set session cookie and clear OAuth cookies
-    const isDev = isLocalDevHost(request.nextUrl.hostname)
-    const redirectUrlObj = new URL(`${request.nextUrl.origin}${callbackUrl}`)
+    const isDev = isLocalDev()
+    const hostname = request.headers.get('host') || ''
+    const baseDomain = extractBaseDomain(hostname)
+    // Localhost: cookies scoped to exact subdomain (browser compatibility)
+    // Production: cookies scoped to .basedomain (cross-subdomain SSO)
+    const cookieDomain = isDev ? undefined : `.${baseDomain}`
+
+    const redirectUrl = buildTenantSubdomainUrl(tenant, callbackUrl)
+    const redirectUrlObj = new URL(redirectUrl)
     redirectUrlObj.searchParams.set('sso_success', 'true')
     const response = NextResponse.redirect(redirectUrlObj)
     response.cookies.set('session', sessionToken, {
       path: '/',
+      domain: cookieDomain,
       httpOnly: true,
       sameSite: 'lax',
       secure: !isDev,
       maxAge: 2592000,
     })
-    response.cookies.delete('oauth_state')
-    response.cookies.delete('oauth_code_verifier')
-    response.cookies.delete('oauth_tenant')
-    response.cookies.delete('oauth_callback_url')
+    response.cookies.delete(`oauth_state_${tenant}`)
+    response.cookies.delete(`oauth_code_verifier_${tenant}`)
+    response.cookies.delete(`oauth_tenant_${tenant}`)
+    response.cookies.delete(`oauth_callback_url_${tenant}`)
+    logAuditEvent('oauth_complete', tenant, request.headers, {
+      userId: payload.sub || '',
+    })
 
     return response
   } catch (error) {
+    logAuditEvent('validation_failure', tenant, request.headers, {
+      error: error instanceof Error ? error.message : String(error),
+    })
     console.error('Callback error:', { tenant, error: error instanceof Error ? error.message : String(error) })
-    return Response.redirect(`${request.nextUrl.origin}/auth/error?error=internal_error`)
+    return Response.redirect(
+      buildTenantSubdomainUrl(tenant, '/auth/error?error=internal_error')
+    )
   }
 }

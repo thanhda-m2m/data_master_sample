@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { resolveTenantConfigFromDb } from '@/lib/tenant-resolver'
 import { resolveTenantConfig } from '@/lib/env-config'
 
 function buildSmartiMateTenantUrl(authorizeUrl: string, tenant: string) {
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing tenant' }, { status: 400 })
     }
 
-    const config = await resolveTenantConfig(tenant)
+    const config = await resolveTenantConfigFromDb(tenant) ?? await resolveTenantConfig(tenant)
     if (!config) {
       return NextResponse.json({ error: 'Tenant config not found' }, { status: 404 })
     }

@@ -1,16 +1,62 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { jwtVerify } from 'jose'
+import { detectTenant } from './lib/tenant-detection'
+import { listTenantsFromDb } from './lib/tenant-resolver'
+import { runWithTenant } from './lib/tenant-context'
+
+// Tenant allowlist cache with 5-min TTL
+interface TenantAllowlistCache {
+  allowlist: Set<string>
+  expiresAt: number
+}
+
+let tenantAllowlistCache: TenantAllowlistCache | null = null
+const ALLOWLIST_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+/**
+ * Build tenant allowlist from database with 5-min TTL cache.
+ * Returns Set of valid tenant codes (buscomps.loginid).
+ */
+async function getTenantAllowlist(): Promise<Set<string>> {
+  // Return cached allowlist if not expired
+  if (tenantAllowlistCache && Date.now() < tenantAllowlistCache.expiresAt) {
+    return tenantAllowlistCache.allowlist
+  }
+
+  // Query database for all tenants
+  const tenants = await listTenantsFromDb()
+  const allowlist = new Set(tenants.map((t) => t.loginid))
+
+  // Cache result with TTL
+  tenantAllowlistCache = {
+    allowlist,
+    expiresAt: Date.now() + ALLOWLIST_CACHE_TTL_MS,
+  }
+
+  return allowlist
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const hostname = request.headers.get('host') || ''
 
-  // Extract tenant from subdomain
-  // e.g. daoanhta.localhost:3000 → tenant = "daoanhta"
-  const parts = hostname.split('.')
-  const tenantCandidate = parts.length > 2 ? parts[0] : request.cookies.get('datamaster_tenant')?.value || ''
-  const tenant = /^[a-zA-Z0-9_-]{1,50}$/.test(tenantCandidate) ? tenantCandidate : ''
+  // Detect tenant from subdomain or cookie
+  const cookieTenant = request.cookies.get('datamaster_tenant')?.value
+  const { tenantCode, source } = detectTenant(hostname, cookieTenant)
+
+  // Validate tenant against allowlist
+  let tenant = ''
+  if (tenantCode) {
+    const allowlist = await getTenantAllowlist()
+    if (allowlist.has(tenantCode)) {
+      tenant = tenantCode
+    } else {
+      // Invalid tenant code - redirect to root
+      console.warn('Invalid tenant code rejected', { tenantCode, source })
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+  }
 
   // Validate session cookie
   const sessionCookie = request.cookies.get('session')?.value
@@ -57,6 +103,12 @@ export async function proxy(request: NextRequest) {
     signinUrl.searchParams.set('tenant', tenant)
     signinUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(signinUrl)
+  }
+
+  // Bind tenant context to AsyncLocalStorage for request lifecycle
+  // This allows route handlers to access tenant via getCurrentTenant()
+  if (tenant) {
+    return runWithTenant(tenant, () => NextResponse.next())
   }
 
   return NextResponse.next()

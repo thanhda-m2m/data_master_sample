@@ -1,19 +1,11 @@
 import {NextRequest, NextResponse} from 'next/server'
+import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
 import {resolveTenantConfig} from '@/lib/env-config'
 import {randomBytes, createHash} from 'crypto'
 import {SignJWT} from 'jose'
-
-function isLocalDevHost(hostname: string) {
-    return hostname === 'localhost' ||
-        hostname.endsWith('.localhost') ||
-        hostname === '127.0.0.1' ||
-        hostname === '::1' ||
-        hostname === '[::1]'
-}
-
-function buildDataMasterOrigin(request: NextRequest) {
-    return request.nextUrl.origin
-}
+import {logAuditEvent} from '@/lib/audit-log'
+import {detectTenant} from '@/lib/tenant-detection'
+import {buildTenantSubdomainUrl, extractBaseDomain, isLocalDev} from '@/lib/url-builder'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
     const normalizedBase = baseUrl.replace(/\/+$/, '')
@@ -31,8 +23,16 @@ function escapeHtml(value: string) {
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
-    const tenant = searchParams.get('tenant')
+    const queryTenant = searchParams.get('tenant')
+    const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+
+    // Priority: subdomain > query > cookie
+    const {tenantCode: subdomainTenant} = detectTenant(
+        request.headers.get('host') || '',
+        cookieTenant
+    )
+    const tenant = subdomainTenant || queryTenant
 
     if (!tenant) {
         return Response.json({error: 'Missing tenant parameter'}, {status: 400})
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        const config = await resolveTenantConfig(tenant)
+        const config = await resolveTenantConfigFromDb(tenant) ?? await resolveTenantConfig(tenant)
         if (!config) {
             return Response.json({error: 'Tenant not found'}, {status: 404})
         }
@@ -71,8 +71,10 @@ export async function GET(request: NextRequest) {
             .setExpirationTime('10m')
             .sign(new TextEncoder().encode(process['env']['AUTH' + '_SECRET']))
 
-        const dataMasterOrigin = buildDataMasterOrigin(request)
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
+
+        // Build redirect_uri with tenant subdomain
+        const redirectUri = buildTenantSubdomainUrl(tenant, '/api/auth/callback')
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
@@ -89,13 +91,23 @@ export async function GET(request: NextRequest) {
         authUrl.searchParams.set('client_id', config.clientId)
         authUrl.searchParams.set('response_type', 'code')
         authUrl.searchParams.set('scope', 'openid email profile')
-        authUrl.searchParams.set('redirect_uri', `${dataMasterOrigin}/api/auth/callback`)
+        authUrl.searchParams.set('redirect_uri', redirectUri)
         authUrl.searchParams.set('state', state)
         authUrl.searchParams.set('code_challenge', codeChallenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
 
         // Store state and code_verifier in cookie for callback validation
-        const isDev = isLocalDevHost(request.nextUrl.hostname)
+        const isDev = isLocalDev()
+        const hostname = request.headers.get('host') || ''
+        const baseDomain = extractBaseDomain(hostname)
+        // Localhost: cookies scoped to exact subdomain (browser compatibility)
+        // Production: cookies scoped to .basedomain (cross-subdomain SSO)
+        const cookieDomain = isDev ? undefined : `.${baseDomain}`
+
+        const stateCookieName = `oauth_state_${tenant}`
+        const codeVerifierCookieName = `oauth_code_verifier_${tenant}`
+        const callbackCookieName = `oauth_callback_url_${tenant}`
+        const tenantCookieName = `oauth_tenant_${tenant}`
         const destination = authUrl.toString()
         const html = `<!doctype html>
 <html>
@@ -114,22 +126,25 @@ export async function GET(request: NextRequest) {
             headers: {'Content-Type': 'text/html; charset=utf-8'},
         })
         response.headers.set('Cache-Control', 'no-store')
-        response.cookies.set('oauth_state', state, {
+        response.cookies.set(stateCookieName, state, {
             path: '/',
+            domain: cookieDomain,
             httpOnly: true,
             sameSite: 'lax',
             secure: !isDev,
             maxAge: 600,
         })
-        response.cookies.set('oauth_code_verifier', codeVerifier, {
+        response.cookies.set(codeVerifierCookieName, codeVerifier, {
             path: '/',
+            domain: cookieDomain,
             httpOnly: true,
             sameSite: 'lax',
             secure: !isDev,
             maxAge: 600,
         })
-        response.cookies.set('oauth_tenant', tenant, {
+        response.cookies.set(tenantCookieName, tenant, {
             path: '/',
+            domain: cookieDomain,
             httpOnly: true,
             sameSite: 'lax',
             secure: !isDev,
@@ -137,18 +152,21 @@ export async function GET(request: NextRequest) {
         })
         response.cookies.set('datamaster_tenant', tenant, {
             path: '/',
+            domain: cookieDomain,
             httpOnly: true,
             sameSite: 'lax',
             secure: !isDev,
             maxAge: 2592000,
         })
-        response.cookies.set('oauth_callback_url', callbackUrl, {
+        response.cookies.set(callbackCookieName, callbackUrl, {
             path: '/',
+            domain: cookieDomain,
             httpOnly: true,
             sameSite: 'lax',
             secure: !isDev,
             maxAge: 600,
         })
+        logAuditEvent('oauth_start', tenant, request.headers, {source: 'signin'})
 
         return response
     } catch (error) {

@@ -1,4 +1,5 @@
-import { listTenants, resolveTenantConfig } from '@/lib/env-config'
+import { listTenantsFromDb, resolveTenantConfigFromDb } from '@/lib/tenant-resolver'
+import { resolveTenantConfig } from '@/lib/env-config'
 
 export async function GET(request: Request) {
   try {
@@ -11,7 +12,7 @@ export async function GET(request: Request) {
     const tenant = url.searchParams.get('tenant') || cookieTenant || ''
 
     if (!tenant) {
-      const tenants = await listTenants()
+      const tenants = await listTenantsFromDb()
       return Response.json({ success: true, tenants })
     }
 
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
       return Response.json({ success: false, error: 'Invalid tenant format' }, { status: 400 })
     }
 
-    const config = await resolveTenantConfig(tenant)
+    const config = await resolveTenantConfigFromDb(tenant) ?? await resolveTenantConfig(tenant)
     if (!config) {
       return Response.json({ success: false, tenant, error: 'Tenant not found' }, { status: 404 })
     }

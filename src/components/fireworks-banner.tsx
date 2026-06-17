@@ -1,21 +1,36 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+
+function subscribeToHydrationStore() {
+  return () => {}
+}
+
+function shouldShowSuccessBanner() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  return params.get('sso_success') === 'true' || params.get('login_success') === 'true'
+}
 
 export function FireworksBanner() {
-  const [show, setShow] = useState(false)
+  const shouldShow = useSyncExternalStore(
+    subscribeToHydrationStore,
+    shouldShowSuccessBanner,
+    () => false
+  )
+  const [dismissed, setDismissed] = useState(false)
+  const show = shouldShow && !dismissed
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Check URL for success indicator
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('sso_success') === 'true' || params.get('login_success') === 'true') {
-      setShow(true)
-      // Auto-dismiss after 4 seconds
-      const timer = setTimeout(() => setShow(false), 4000)
+    if (show) {
+      const timer = setTimeout(() => setDismissed(true), 4000)
       return () => clearTimeout(timer)
     }
-  }, [])
+  }, [show])
 
   useEffect(() => {
     if (!show || !containerRef.current) return

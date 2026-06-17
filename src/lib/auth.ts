@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { unstable_rethrow } from 'next/navigation'
 import { jwtVerify } from 'jose'
-import { resolveTenantConfig } from "./env-config"
+import { resolveTenantConfig } from './env-config'
 
 export interface Session {
   user: {

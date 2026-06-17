@@ -1,3 +1,5 @@
+import { listTenantsFromDb, resolveTenantConfigFromDb } from './tenant-resolver'
+
 export interface TenantConfig {
   userPoolId: string
   clientId: string
@@ -49,6 +51,12 @@ function cognitoBaseUrl() {
 }
 
 export async function resolveTenantConfig(tenantCode: string): Promise<TenantConfig | null> {
+  // Prefer database-backed tenant config during the multi-tenant migration.
+  const dbConfig = await resolveTenantConfigFromDb(tenantCode)
+  if (dbConfig) {
+    return dbConfig
+  }
+
   const loginId = configuredTenant()
   if (!loginId || tenantCode !== loginId) {
     return null
@@ -89,6 +97,16 @@ export async function resolveTenantConfig(tenantCode: string): Promise<TenantCon
 }
 
 export async function listTenants(): Promise<TenantSummary[]> {
+  const dbTenants = await listTenantsFromDb()
+  if (dbTenants.length > 0) {
+    return dbTenants.map((tenant) => ({
+      bkid: tenant.bkid,
+      loginId: tenant.loginId,
+      compname: tenant.compname || tenant.bcname,
+      bcname: tenant.bcname,
+    }))
+  }
+
   const loginId = configuredTenant()
   if (!loginId) {
     return []

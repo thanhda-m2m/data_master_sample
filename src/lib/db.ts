@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise'
 const pool = mysql.createPool({
   host: process.env.HZ_TAK_DB_HOST || 'localhost',
   port: parseInt(process.env.HZ_TAK_DB_PORT || '3306'),
-  database: process.env.HZ_TAK_DB_NAME || 'tbtech',
+  database: process.env.HZ_TAK_DB_NAME || 'zaikodb',
   user: process.env.HZ_TAK_DB_USER || 'root',
   password: process.env.HZ_TAK_DB_PASSWORD || 'root',
   waitForConnections: true,
