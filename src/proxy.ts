@@ -52,9 +52,11 @@ export async function proxy(request: NextRequest) {
     if (allowlist.has(tenantCode)) {
       tenant = tenantCode
     } else {
-      // Invalid tenant code - redirect to root
+      // Invalid tenant code - clear cookie and redirect to root
       console.warn('Invalid tenant code rejected', { tenantCode, source })
-      return NextResponse.redirect(new URL('/', request.url))
+      const response = NextResponse.redirect(new URL('/', request.url))
+      response.cookies.delete('datamaster_tenant')
+      return response
     }
   }
 
