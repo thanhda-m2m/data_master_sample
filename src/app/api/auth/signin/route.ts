@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
 
         // Use base domain redirect_uri (no subdomain)
         const redirectUri = `${request.nextUrl.origin}/api/auth/callback`
+        console.log('[SIGNIN] Redirecting to Smart iMATE:', {smartiMateBaseUrl, redirectUri})
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
