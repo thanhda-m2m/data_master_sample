@@ -1,22 +1,10 @@
 'use client'
 
-import {type FormEvent} from 'react'
 import type {TenantSummary} from '@/lib/tenant-types'
 
 export function TenantSelectionForm({tenants}: {tenants: TenantSummary[]}) {
-    const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-        e.preventDefault()
-        const formData = new FormData(e.currentTarget)
-        const tenant = formData.get('tenant') as string
-        if (!tenant) return
-
-        const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || 'localhost:3000'
-        const protocol = baseDomain.includes('localhost') ? 'http' : 'https'
-        window.location.href = `${protocol}://${tenant}.${baseDomain}/api/auth/signin`
-    }
-
     return (
-        <form action="/api/auth/signin" method="get" className="space-y-3" onSubmit={handleSubmit}>
+        <form action="/api/auth/signin" method="get" className="space-y-3">
             <label className="sr-only" htmlFor="tenant">
                 テナント
             </label>
