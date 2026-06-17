@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { detectTenant, extractSubdomainTenant, isLocalDevHost, resolveSigninTenant } from '../tenant-detection'
 
 describe('tenant-detection', () => {
+  const originalBaseDomain = process['env']['NEXT_PUBLIC_BASE_DOMAIN']
+
+  afterEach(() => {
+    if (originalBaseDomain) {
+      process['env']['NEXT_PUBLIC_BASE_DOMAIN'] = originalBaseDomain
+      return
+    }
+
+    delete process['env']['NEXT_PUBLIC_BASE_DOMAIN']
+  })
+
   it('extracts tenant from localhost subdomains', () => {
     expect(extractSubdomainTenant('takdemo.localhost:3000')).toBe('takdemo')
   })
@@ -13,6 +24,22 @@ describe('tenant-detection', () => {
   it('returns null when there is no subdomain', () => {
     expect(extractSubdomainTenant('localhost:3000')).toBeNull()
     expect(extractSubdomainTenant('example.com')).toBeNull()
+  })
+
+  it('treats the configured base host as a single-host deployment', () => {
+    process['env']['NEXT_PUBLIC_BASE_DOMAIN'] = 'hozen-tak-sso-login.tbtech.jp'
+
+    expect(extractSubdomainTenant('hozen-tak-sso-login.tbtech.jp')).toBeNull()
+    expect(detectTenant('hozen-tak-sso-login.tbtech.jp')).toEqual({
+      tenantCode: null,
+      source: 'none',
+    })
+  })
+
+  it('still extracts tenant subdomains beneath a configured base host', () => {
+    process['env']['NEXT_PUBLIC_BASE_DOMAIN'] = 'hozen-tak-sso-login.tbtech.jp'
+
+    expect(extractSubdomainTenant('tenant.hozen-tak-sso-login.tbtech.jp')).toBe('tenant')
   })
 
   it('recognizes local development hosts', () => {
@@ -52,7 +79,7 @@ describe('tenant-detection', () => {
 
   it('keeps subdomain tenant priority during sign in', () => {
     expect(resolveSigninTenant('tenantC.localhost:3000', 'tenantB', 'tenantA')).toEqual({
-      tenantCode: 'tenantC',
+      tenantCode: 'tenantc',
       source: 'subdomain',
     })
   })

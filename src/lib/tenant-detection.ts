@@ -3,6 +3,14 @@
  * Supports local dev (*.localhost) and production (*.domain.com).
  */
 
+function stripPort(hostname: string): string {
+  return hostname.split(':')[0].toLowerCase()
+}
+
+function configuredBaseHost(): string {
+  return (process['env']['NEXT_PUBLIC_BASE_DOMAIN'] || '').trim().toLowerCase()
+}
+
 /**
  * Extract tenant code from subdomain.
  * Returns null if no subdomain detected.
@@ -17,8 +25,20 @@
  * @returns Tenant code or null
  */
 export function extractSubdomainTenant(hostname: string): string | null {
-  // Strip port if present
-  const host = hostname.split(':')[0]
+  const host = stripPort(hostname)
+  const baseHost = configuredBaseHost()
+
+  if (baseHost) {
+    if (host === baseHost) {
+      return null
+    }
+
+    const suffix = `.${baseHost}`
+    if (host.endsWith(suffix)) {
+      const subdomain = host.slice(0, -suffix.length)
+      return subdomain ? subdomain.split('.')[0] : null
+    }
+  }
 
   // Split by dot
   const parts = host.split('.')
@@ -50,7 +70,7 @@ export function extractSubdomainTenant(hostname: string): string | null {
  * @returns True if local dev host
  */
 export function isLocalDevHost(hostname: string): boolean {
-  const host = hostname.split(':')[0].toLowerCase()
+  const host = stripPort(hostname)
   return (
     host === 'localhost' ||
     host === '127.0.0.1' ||
