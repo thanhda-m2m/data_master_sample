@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectTenant, extractSubdomainTenant, isLocalDevHost } from '../tenant-detection'
+import { detectTenant, extractSubdomainTenant, isLocalDevHost, resolveSigninTenant } from '../tenant-detection'
 
 describe('tenant-detection', () => {
   it('extracts tenant from localhost subdomains', () => {
@@ -40,6 +40,20 @@ describe('tenant-detection', () => {
     expect(detectTenant('localhost:3000')).toEqual({
       tenantCode: null,
       source: 'none',
+    })
+  })
+
+  it('uses submitted tenant over stale cookie during sign in on base host', () => {
+    expect(resolveSigninTenant('localhost:3000', 'tenantB', 'tenantA')).toEqual({
+      tenantCode: 'tenantB',
+      source: 'query',
+    })
+  })
+
+  it('keeps subdomain tenant priority during sign in', () => {
+    expect(resolveSigninTenant('tenantC.localhost:3000', 'tenantB', 'tenantA')).toEqual({
+      tenantCode: 'tenantC',
+      source: 'subdomain',
     })
   })
 })

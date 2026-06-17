@@ -85,3 +85,28 @@ export function detectTenant(
   // Priority 3: None
   return { tenantCode: null, source: 'none' }
 }
+
+/**
+ * Resolve tenant for an explicit sign-in request.
+ * A fresh tenant selection from the query string must beat stale cookie state.
+ */
+export function resolveSigninTenant(
+  hostname: string,
+  queryTenant?: string | null,
+  cookieTenant?: string
+): { tenantCode: string | null; source: 'subdomain' | 'query' | 'cookie' | 'none' } {
+  const subdomainTenant = extractSubdomainTenant(hostname)
+  if (subdomainTenant) {
+    return { tenantCode: subdomainTenant, source: 'subdomain' }
+  }
+
+  if (queryTenant) {
+    return { tenantCode: queryTenant, source: 'query' }
+  }
+
+  if (cookieTenant) {
+    return { tenantCode: cookieTenant, source: 'cookie' }
+  }
+
+  return { tenantCode: null, source: 'none' }
+}

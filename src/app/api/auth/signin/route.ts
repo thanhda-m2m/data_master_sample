@@ -4,7 +4,7 @@ import {resolveTenantConfig} from '@/lib/env-config'
 import {randomBytes, createHash} from 'crypto'
 import {SignJWT} from 'jose'
 import {logAuditEvent} from '@/lib/audit-log'
-import {detectTenant} from '@/lib/tenant-detection'
+import {resolveSigninTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
@@ -27,12 +27,12 @@ export async function GET(request: NextRequest) {
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
 
-    // Priority: subdomain > query > cookie
-    const {tenantCode: subdomainTenant} = detectTenant(
+    // Priority: subdomain > submitted selection > cookie fallback.
+    const {tenantCode: tenant} = resolveSigninTenant(
         request.headers.get('host') || '',
+        queryTenant,
         cookieTenant
     )
-    const tenant = subdomainTenant || queryTenant || cookieTenant
 
     if (!tenant) {
         return Response.json({error: 'Missing tenant parameter'}, {status: 400})
