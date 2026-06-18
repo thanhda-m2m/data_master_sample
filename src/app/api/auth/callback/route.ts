@@ -229,11 +229,24 @@ export async function GET(request: NextRequest) {
       clientId: config.clientId,
     })
 
-    const tokenResponse = await fetch(config.smartimateTokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: tokenParams,
-    })
+    let tokenResponse
+    try {
+      tokenResponse = await fetch(config.smartimateTokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: tokenParams,
+      })
+    } catch (fetchError) {
+      const errMsg = fetchError instanceof Error ? fetchError.message : String(fetchError)
+      const errCause = fetchError instanceof Error && 'cause' in fetchError ? fetchError.cause : undefined
+      console.error('Token exchange fetch failed:', {
+        tenant,
+        url: config.smartimateTokenUrl,
+        error: errMsg,
+        cause: errCause,
+      })
+      return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
+    }
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text()
