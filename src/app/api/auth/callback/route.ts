@@ -202,6 +202,16 @@ export async function GET(request: NextRequest) {
     // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
     // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
     const redirectUri = `${requestOrigin}/api/auth/callback`
+
+    console.log('[CALLBACK] Token exchange params:', {
+      redirectUri,
+      tokenUrl: config.smartimateTokenUrl,
+      headers: {
+        host: request.headers.get('host'),
+        'x-forwarded-proto': request.headers.get('x-forwarded-proto'),
+        'x-forwarded-host': request.headers.get('x-forwarded-host'),
+      },
+    })
     const tokenParams = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: config.clientId,
@@ -213,6 +223,12 @@ export async function GET(request: NextRequest) {
       tokenParams.set('client_secret', config.clientSecret)
     }
 
+    console.log('[CALLBACK] Token exchange request:', {
+      url: config.smartimateTokenUrl,
+      redirectUri,
+      clientId: config.clientId,
+    })
+
     const tokenResponse = await fetch(config.smartimateTokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -221,7 +237,7 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok) {
       const error = await tokenResponse.text()
-      console.error('Token exchange failed:', { tenant, error })
+      console.error('Token exchange failed:', { tenant, url: config.smartimateTokenUrl, status: tokenResponse.status, error })
       return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
     }
 
@@ -324,7 +340,11 @@ export async function GET(request: NextRequest) {
     logAuditEvent('validation_failure', tenant, request.headers, {
       error: error instanceof Error ? error.message : String(error),
     })
-    console.error('Callback error:', { tenant, error: error instanceof Error ? error.message : String(error) })
+    console.error('Callback error:', {
+      tenant,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    })
     return Response.redirect(new URL('/auth/error?error=internal_error', requestOrigin))
   }
 }
