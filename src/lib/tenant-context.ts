@@ -3,7 +3,7 @@
  * Binds tenant code to async execution context.
  */
 
-import { AsyncLocalStorage } from 'async_hooks'
+import {AsyncLocalStorage} from 'async_hooks'
 
 const tenantContext = new AsyncLocalStorage<string>()
 
@@ -16,7 +16,7 @@ const tenantContext = new AsyncLocalStorage<string>()
  * @returns Result of fn execution
  */
 export function runWithTenant<T>(tenantCode: string, fn: () => T): T {
-  return tenantContext.run(tenantCode, fn)
+    return tenantContext.run(tenantCode, fn)
 }
 
 /**
@@ -26,5 +26,5 @@ export function runWithTenant<T>(tenantCode: string, fn: () => T): T {
  * @returns Current tenant code or undefined
  */
 export function getCurrentTenant(): string | undefined {
-  return tenantContext.getStore()
+    return tenantContext.getStore()
 }

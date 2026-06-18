@@ -2,7 +2,7 @@
 
 import type {TenantSummary} from '@/lib/tenant-types'
 
-export function TenantSelectionForm({tenants}: {tenants: TenantSummary[]}) {
+export function TenantSelectionForm({tenants}: { tenants: TenantSummary[] }) {
     return (
         <form action="/api/auth/signin" method="get" className="space-y-3">
             <label className="sr-only" htmlFor="tenant">

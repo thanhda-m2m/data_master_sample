@@ -12,21 +12,21 @@ export const DEFAULT_BASE_DOMAIN = 'localhost:3000'
  * @throws Error if tenant format is invalid
  */
 export function buildTenantSubdomainUrl(
-  tenant: string,
-  path: string = '/'
+    tenant: string,
+    path: string = '/'
 ): string {
-  // Validate tenant format to prevent subdomain injection
-  if (!/^[a-zA-Z0-9_-]{1,50}$/.test(tenant)) {
-    throw new Error(`Invalid tenant format: ${tenant}`)
-  }
+    // Validate tenant format to prevent subdomain injection
+    if (!/^[a-zA-Z0-9_-]{1,50}$/.test(tenant)) {
+        throw new Error(`Invalid tenant format: ${tenant}`)
+    }
 
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || DEFAULT_BASE_DOMAIN
-  const protocol = baseDomain.includes('localhost') ? 'http' : 'https'
+    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || DEFAULT_BASE_DOMAIN
+    const protocol = baseDomain.includes('localhost') ? 'http' : 'https'
 
-  // Ensure path starts with /
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+    // Ensure path starts with /
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`
 
-  return `${protocol}://${tenant}.${baseDomain}${normalizedPath}`
+    return `${protocol}://${tenant}.${baseDomain}${normalizedPath}`
 }
 
 /**
@@ -34,8 +34,8 @@ export function buildTenantSubdomainUrl(
  * @returns true if base domain includes 'localhost'
  */
 export function isLocalDev(): boolean {
-  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || ''
-  return baseDomain.includes('localhost')
+    const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || ''
+    return baseDomain.includes('localhost')
 }
 
 /**
@@ -44,18 +44,18 @@ export function isLocalDev(): boolean {
  * @returns Base domain (e.g., 'localhost:3000')
  */
 export function extractBaseDomain(host: string): string {
-  // Split host and port
-  const [hostname, port] = host.split(':')
+    // Split host and port
+    const [hostname, port] = host.split(':')
 
-  // For localhost, strip first subdomain part
-  if (hostname.includes('localhost')) {
-    const base = hostname.replace(/^[^.]+\./, '')
-    return port ? `${base}:${port}` : base
-  }
+    // For localhost, strip first subdomain part
+    if (hostname.includes('localhost')) {
+        const base = hostname.replace(/^[^.]+\./, '')
+        return port ? `${base}:${port}` : base
+    }
 
-  // For production domains, extract last two parts (domain.com)
-  const parts = hostname.split('.')
-  const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : hostname
+    // For production domains, extract last two parts (domain.com)
+    const parts = hostname.split('.')
+    const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : hostname
 
-  return port ? `${baseDomain}:${port}` : baseDomain
+    return port ? `${baseDomain}:${port}` : baseDomain
 }

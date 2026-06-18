@@ -65,7 +65,7 @@ export default async function Home() {
                         テナントを選択
                     </p>
                     {tenants.length > 0 ? (
-                        <TenantSelectionForm tenants={tenants} />
+                        <TenantSelectionForm tenants={tenants}/>
                     ) : (
                         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
                             <p className="text-sm text-red-700">

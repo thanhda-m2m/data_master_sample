@@ -4,22 +4,22 @@
  */
 
 function stripPort(hostname: string): string {
-  return hostname.split(':')[0].toLowerCase()
+    return hostname.split(':')[0].toLowerCase()
 }
 
 function configuredBaseHost(): string {
-  return (process['env']['NEXT_PUBLIC_BASE_DOMAIN'] || '').trim().toLowerCase()
+    return (process['env']['NEXT_PUBLIC_BASE_DOMAIN'] || '').trim().toLowerCase()
 }
 
 /**
  * Check if hostname is an IP address (IPv4 or IPv6).
  */
 function isIpAddress(host: string): boolean {
-  // IPv4: 4 numeric parts separated by dots
-  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/
-  // IPv6: contains colons
-  const ipv6Pattern = /:/
-  return ipv4Pattern.test(host) || ipv6Pattern.test(host)
+    // IPv4: 4 numeric parts separated by dots
+    const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/
+    // IPv6: contains colons
+    const ipv6Pattern = /:/
+    return ipv4Pattern.test(host) || ipv6Pattern.test(host)
 }
 
 /**
@@ -37,46 +37,46 @@ function isIpAddress(host: string): boolean {
  * @returns Tenant code or null
  */
 export function extractSubdomainTenant(hostname: string): string | null {
-  const host = stripPort(hostname)
-  const baseHost = configuredBaseHost()
+    const host = stripPort(hostname)
+    const baseHost = configuredBaseHost()
 
-  // IP addresses should not be treated as subdomains
-  if (isIpAddress(host)) {
-    return null
-  }
-
-  if (baseHost) {
-    if (host === baseHost) {
-      return null
+    // IP addresses should not be treated as subdomains
+    if (isIpAddress(host)) {
+        return null
     }
 
-    const suffix = `.${baseHost}`
-    if (host.endsWith(suffix)) {
-      const subdomain = host.slice(0, -suffix.length)
-      return subdomain ? subdomain.split('.')[0] : null
+    if (baseHost) {
+        if (host === baseHost) {
+            return null
+        }
+
+        const suffix = `.${baseHost}`
+        if (host.endsWith(suffix)) {
+            const subdomain = host.slice(0, -suffix.length)
+            return subdomain ? subdomain.split('.')[0] : null
+        }
     }
-  }
 
-  // Split by dot
-  const parts = host.split('.')
+    // Split by dot
+    const parts = host.split('.')
 
-  // No subdomain if only one part (e.g., "localhost")
-  if (parts.length < 2) {
+    // No subdomain if only one part (e.g., "localhost")
+    if (parts.length < 2) {
+        return null
+    }
+
+    // Check for *.localhost pattern (local dev)
+    if (host.endsWith('.localhost')) {
+        return parts[0]
+    }
+
+    // Check for *.domain.com pattern (production)
+    // Assumes subdomain exists if parts > 2 (e.g., tenant.example.com)
+    if (parts.length > 2) {
+        return parts[0]
+    }
+
     return null
-  }
-
-  // Check for *.localhost pattern (local dev)
-  if (host.endsWith('.localhost')) {
-    return parts[0]
-  }
-
-  // Check for *.domain.com pattern (production)
-  // Assumes subdomain exists if parts > 2 (e.g., tenant.example.com)
-  if (parts.length > 2) {
-    return parts[0]
-  }
-
-  return null
 }
 
 /**
@@ -87,13 +87,13 @@ export function extractSubdomainTenant(hostname: string): string | null {
  * @returns True if local dev host
  */
 export function isLocalDevHost(hostname: string): boolean {
-  const host = stripPort(hostname)
-  return (
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    host.endsWith('.localhost')
-  )
+    const host = stripPort(hostname)
+    return (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '::1' ||
+        host.endsWith('.localhost')
+    )
 }
 
 /**
@@ -105,22 +105,22 @@ export function isLocalDevHost(hostname: string): boolean {
  * @returns Tenant detection result
  */
 export function detectTenant(
-  hostname: string,
-  cookieTenant?: string
+    hostname: string,
+    cookieTenant?: string
 ): { tenantCode: string | null; source: 'subdomain' | 'cookie' | 'none' } {
-  // Priority 1: Subdomain
-  const subdomainTenant = extractSubdomainTenant(hostname)
-  if (subdomainTenant) {
-    return { tenantCode: subdomainTenant, source: 'subdomain' }
-  }
+    // Priority 1: Subdomain
+    const subdomainTenant = extractSubdomainTenant(hostname)
+    if (subdomainTenant) {
+        return {tenantCode: subdomainTenant, source: 'subdomain'}
+    }
 
-  // Priority 2: Cookie
-  if (cookieTenant) {
-    return { tenantCode: cookieTenant, source: 'cookie' }
-  }
+    // Priority 2: Cookie
+    if (cookieTenant) {
+        return {tenantCode: cookieTenant, source: 'cookie'}
+    }
 
-  // Priority 3: None
-  return { tenantCode: null, source: 'none' }
+    // Priority 3: None
+    return {tenantCode: null, source: 'none'}
 }
 
 /**
@@ -128,22 +128,22 @@ export function detectTenant(
  * A fresh tenant selection from the query string must beat stale cookie state.
  */
 export function resolveSigninTenant(
-  hostname: string,
-  queryTenant?: string | null,
-  cookieTenant?: string
+    hostname: string,
+    queryTenant?: string | null,
+    cookieTenant?: string
 ): { tenantCode: string | null; source: 'subdomain' | 'query' | 'cookie' | 'none' } {
-  const subdomainTenant = extractSubdomainTenant(hostname)
-  if (subdomainTenant) {
-    return { tenantCode: subdomainTenant, source: 'subdomain' }
-  }
+    const subdomainTenant = extractSubdomainTenant(hostname)
+    if (subdomainTenant) {
+        return {tenantCode: subdomainTenant, source: 'subdomain'}
+    }
 
-  if (queryTenant) {
-    return { tenantCode: queryTenant, source: 'query' }
-  }
+    if (queryTenant) {
+        return {tenantCode: queryTenant, source: 'query'}
+    }
 
-  if (cookieTenant) {
-    return { tenantCode: cookieTenant, source: 'cookie' }
-  }
+    if (cookieTenant) {
+        return {tenantCode: cookieTenant, source: 'cookie'}
+    }
 
-  return { tenantCode: null, source: 'none' }
+    return {tenantCode: null, source: 'none'}
 }
