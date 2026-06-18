@@ -12,6 +12,17 @@ function configuredBaseHost(): string {
 }
 
 /**
+ * Check if hostname is an IP address (IPv4 or IPv6).
+ */
+function isIpAddress(host: string): boolean {
+  // IPv4: 4 numeric parts separated by dots
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/
+  // IPv6: contains colons
+  const ipv6Pattern = /:/
+  return ipv4Pattern.test(host) || ipv6Pattern.test(host)
+}
+
+/**
  * Extract tenant code from subdomain.
  * Returns null if no subdomain detected.
  *
@@ -20,6 +31,7 @@ function configuredBaseHost(): string {
  * - daoanhta.example.com → "daoanhta"
  * - localhost:3000 → null
  * - example.com → null
+ * - 10.0.10.12 → null (IP addresses are not subdomains)
  *
  * @param hostname - Request hostname (req.headers.host)
  * @returns Tenant code or null
@@ -27,6 +39,11 @@ function configuredBaseHost(): string {
 export function extractSubdomainTenant(hostname: string): string | null {
   const host = stripPort(hostname)
   const baseHost = configuredBaseHost()
+
+  // IP addresses should not be treated as subdomains
+  if (isIpAddress(host)) {
+    return null
+  }
 
   if (baseHost) {
     if (host === baseHost) {
