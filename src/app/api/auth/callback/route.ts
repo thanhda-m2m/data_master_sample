@@ -230,6 +230,7 @@ export async function GET(request: NextRequest) {
             url: config.smartimateTokenUrl,
             redirectUri,
             clientId: config.clientId,
+            bodyParams: Object.fromEntries(tokenParams.entries()),
         })
 
         let tokenResponse

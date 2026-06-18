@@ -25,7 +25,8 @@ export function resolveRequestOrigin(headers: Headers, fallbackOrigin: string): 
     }
 
     const protocol = normalizeProtocol(firstHeaderValue(headers.get('x-forwarded-proto')), fallbackOrigin)
-    // Force HTTPS in production to satisfy OAuth TLS requirement
-    const safeProtocol = process.env.NODE_ENV === 'production' ? 'https' : protocol
+    // Force HTTPS when behind ALB/proxy to satisfy OAuth TLS requirement
+    // Use localhost check to allow HTTP in local dev
+    const safeProtocol = host.includes('localhost') || host.startsWith('127.') || host.startsWith('192.168.') ? protocol : 'https'
     return `${safeProtocol}://${host}`
 }
