@@ -129,7 +129,7 @@ function cognitoHostedUiBaseUrl() {
     return customDomain.startsWith('http') ? customDomain : `https://${customDomain}`
   }
 
-  return envValue(envKey('COGNITO', 'HOSTED', 'UI', 'BASE', 'URL')) || 'https://cognito.example.com'
+  return envValue(envKey('COGNITO', 'HOSTED', 'UI', 'BASE', 'URL')) || envValue('SMARTIMATE_INTERNAL_BASE_URL') || 'https://cognito.example.com'
 }
 
 function buildOAuthUrls(region: string, userPoolId: string) {

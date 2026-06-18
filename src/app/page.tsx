@@ -50,7 +50,7 @@ export default async function Home() {
                                   d="M13 10V3L4 14h7v7l9-11h-7z"/>
                         </svg>
                     </div>
-                    <h1 className="text-4xl font-bold text-slate-900">データマスター</h1>
+                    <h1 className="text-4xl font-bold text-slate-900">デジタル保全マイスター</h1>
                     <p className="text-lg text-slate-600 font-medium">
                         エンタープライズSSO認証ゲートウェイ
                     </p>
