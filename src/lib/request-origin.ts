@@ -25,5 +25,7 @@ export function resolveRequestOrigin(headers: Headers, fallbackOrigin: string): 
   }
 
   const protocol = normalizeProtocol(firstHeaderValue(headers.get('x-forwarded-proto')), fallbackOrigin)
-  return `${protocol}://${host}`
+  // Force HTTPS in production to satisfy OAuth TLS requirement
+  const safeProtocol = process.env.NODE_ENV === 'production' ? 'https' : protocol
+  return `${safeProtocol}://${host}`
 }
