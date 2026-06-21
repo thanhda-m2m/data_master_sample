@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
         // 8. /oauth2/token returns Cognito tokens (access_token, id_token, refresh_token)
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
         authUrl.searchParams.set('redirect_uri', redirectUri)
-        authUrl.searchParams.set('state', oauthSession)
+        authUrl.searchParams.set('session', oauthSession)
         authUrl.searchParams.set('code_challenge', codeChallenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
 
