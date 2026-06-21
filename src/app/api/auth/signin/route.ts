@@ -2,11 +2,11 @@ import {NextRequest, NextResponse} from 'next/server'
 import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
 import {resolveTenantConfig} from '@/lib/env-config'
 import {createHash, randomBytes} from 'crypto'
-import {SignJWT} from 'jose'
 import {logAuditEvent} from '@/lib/audit-log'
 import {resolveSigninTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
+import {signOAuthState} from '@/lib/oauth-state'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
     const normalizedBase = baseUrl.replace(/\/+$/, '')
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate callback URL (prevent open redirect)
-    if (!callbackUrl.startsWith('/')) {
+    if (!callbackUrl.startsWith('/') || callbackUrl.startsWith('//')) {
         return Response.json({error: 'Invalid callback URL'}, {status: 400})
     }
 
@@ -61,16 +61,11 @@ export async function GET(request: NextRequest) {
             .update(codeVerifier)
             .digest('base64url')
         const stateNonce = randomBytes(16).toString('base64url')
-        const state = await new SignJWT({
+        const oauthSession = await signOAuthState({
             tenant,
-            codeVerifier,
             callbackUrl,
             nonce: stateNonce,
         })
-            .setProtectedHeader({alg: 'HS256'})
-            .setIssuedAt()
-            .setExpirationTime('10m')
-            .sign(new TextEncoder().encode(process['env']['AUTH' + '_SECRET']))
 
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
 
@@ -80,7 +75,7 @@ export async function GET(request: NextRequest) {
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
-        // 1. Redirect to /{tenant}/login.php with OAuth params (client_id, redirect_uri, state, code_challenge)
+        // 1. Redirect to /{tenant}/login.php with OAuth params (client_id, redirect_uri, session, code_challenge)
         // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
         // 3. login.php stores Cognito tokens in session
         // 4. login.php redirects to /oauth2/authorize with same OAuth params
@@ -91,14 +86,13 @@ export async function GET(request: NextRequest) {
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
         authUrl.searchParams.set('app', 'datamaster')
         authUrl.searchParams.set('client_id', config.clientId)
-        authUrl.searchParams.set('response_type', 'code')
         authUrl.searchParams.set('scope', 'openid email profile')
         authUrl.searchParams.set('redirect_uri', redirectUri)
-        authUrl.searchParams.set('state', state)
+        authUrl.searchParams.set('session', oauthSession)
         authUrl.searchParams.set('code_challenge', codeChallenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
 
-        // Store state and code_verifier in cookie for callback validation
+        // Store OAuth session and code_verifier in cookie for callback validation
         // No domain specified - cookies scoped to current domain only
         const isDev = isLocalDev()
         const stateCookieName = `oauth_state_${tenant}`
@@ -132,7 +126,7 @@ export async function GET(request: NextRequest) {
             headers: {'Content-Type': 'text/html; charset=utf-8'},
         })
         response.headers.set('Cache-Control', 'no-store')
-        response.cookies.set(stateCookieName, state, {
+        response.cookies.set(stateCookieName, oauthSession, {
             path: '/',
             httpOnly: true,
             sameSite: 'lax',

@@ -1,12 +1,13 @@
 import {NextRequest, NextResponse} from 'next/server'
 import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
 import {resolveTenantConfig} from '@/lib/env-config'
-import {jwtVerify, SignJWT} from 'jose'
+import {SignJWT} from 'jose'
 import {cookies} from 'next/headers'
 import {logAuditEvent} from '@/lib/audit-log'
 import {detectTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
+import {readSignedOAuthState, resolveOAuthCallbackState} from '@/lib/oauth-state'
 
 type CognitoUserPayload = {
     sub?: string
@@ -16,57 +17,6 @@ type CognitoUserPayload = {
     given_name?: string
     family_name?: string
     tenant_id?: string
-}
-
-type SignedStatePayload = {
-    tenant?: string
-    codeVerifier?: string
-    callbackUrl?: string
-}
-
-async function readSignedState(state: string | null): Promise<SignedStatePayload | null> {
-    if (!state) {
-        return null
-    }
-
-    try {
-        const {payload} = await jwtVerify(
-            state,
-            new TextEncoder().encode(process['env']['AUTH' + '_SECRET'])
-        )
-        return {
-            tenant: typeof payload.tenant === 'string' ? payload.tenant : undefined,
-            codeVerifier: typeof payload.codeVerifier === 'string' ? payload.codeVerifier : undefined,
-            callbackUrl: typeof payload.callbackUrl === 'string' ? payload.callbackUrl : undefined,
-        }
-    } catch {
-        return null
-    }
-}
-
-async function fetchCognitoUserInfo(accessToken: string, userInfoUrl: string): Promise<CognitoUserPayload> {
-    const response = await fetch(userInfoUrl, {
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-        },
-    })
-
-    if (!response.ok) {
-        throw new Error(await response.text())
-    }
-
-    const result = await response.json() as CognitoUserPayload
-
-    return {
-        sub: result.sub || result.preferred_username || '',
-        email: result.email || '',
-        name: result.name || '',
-        preferred_username: result.preferred_username || '',
-        given_name: result.given_name || '',
-        family_name: result.family_name || '',
-        tenant_id: result.tenant_id || '',
-    }
 }
 
 async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
@@ -107,25 +57,10 @@ async function fetchCognitoGetUser(accessToken: string, region: string): Promise
     }
 }
 
-async function fetchCognitoUser(accessToken: string, config: {
-    cognitoUserInfoUrl: string;
-    region: string
-}): Promise<CognitoUserPayload> {
-    try {
-        return await fetchCognitoUserInfo(accessToken, config.cognitoUserInfoUrl)
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (!message.includes('openid')) {
-            throw error
-        }
-        return fetchCognitoGetUser(accessToken, config.region)
-    }
-}
-
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get('code')
-    const state = searchParams.get('state')
+    const oauthSession = searchParams.get('session') || searchParams.get('state')
     const providerError = searchParams.get('error')
     const providerErrorDescription = searchParams.get('error_description')
     const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
@@ -136,13 +71,19 @@ export async function GET(request: NextRequest) {
     )
 
     const cookieStore = await cookies()
-    const signedState = await readSignedState(state)
-    const stateTenant = signedState?.tenant
-    const storedState = stateTenant ? cookieStore.get(`oauth_state_${stateTenant}`)?.value : undefined
-    const codeVerifier = stateTenant
-        ? cookieStore.get(`oauth_code_verifier_${stateTenant}`)?.value || signedState?.codeVerifier
-        : signedState?.codeVerifier
-    const cookieTenant = stateTenant ? cookieStore.get(`oauth_tenant_${stateTenant}`)?.value : undefined
+    const signedState = await readSignedOAuthState(oauthSession)
+    const {
+        stateTenant,
+        storedState,
+        codeVerifier,
+        cookieTenant,
+        callbackUrl,
+        isValid: isOAuthStateValid,
+    } = resolveOAuthCallbackState(
+        oauthSession,
+        signedState,
+        name => cookieStore.get(name)?.value
+    )
 
     console.log('[CALLBACK] Reading cookies:', {
         stateTenant,
@@ -152,12 +93,8 @@ export async function GET(request: NextRequest) {
         allCookies: Array.from(cookieStore.getAll().map(c => c.name)),
     })
 
-    // Priority: subdomain > state JWT > cookie
+    // Priority: subdomain > OAuth session JWT > cookie
     const tenant = subdomainTenant || stateTenant || cookieTenant
-
-    const callbackUrl = stateTenant
-        ? cookieStore.get(`oauth_callback_url_${stateTenant}`)?.value || signedState?.callbackUrl || '/'
-        : signedState?.callbackUrl || '/'
 
     // Validate tenant consistency
     if (subdomainTenant && stateTenant && subdomainTenant !== stateTenant) {
@@ -174,10 +111,10 @@ export async function GET(request: NextRequest) {
         return Response.redirect(errorUrlObj)
     }
 
-    // Validate state
-    if (!code || !state || !tenant || !codeVerifier || (!signedState && state !== storedState)) {
-        logAuditEvent('validation_failure', tenant || 'unknown', request.headers, {error: 'invalid_state'})
-        return Response.redirect(new URL('/auth/error?error=invalid_state', requestOrigin))
+    // Validate OAuth session
+    if (!code || !tenant || !codeVerifier || !isOAuthStateValid) {
+        logAuditEvent('validation_failure', tenant || 'unknown', request.headers, {error: 'invalid_session'})
+        return Response.redirect(new URL('/auth/error?error=invalid_session', requestOrigin))
     }
 
     try {

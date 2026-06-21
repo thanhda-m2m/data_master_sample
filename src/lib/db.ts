@@ -12,13 +12,13 @@ const pool = mysql.createPool({
     connectTimeout: 2000,
 })
 
-export async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
+export async function query<T>(statement: string, params?: unknown[]): Promise<T[]> {
     try {
-        const [rows] = await pool.execute(text, params as mysql.RowDataPacket[])
+        const [rows] = await pool.execute(statement, params as mysql.RowDataPacket[])
         return rows as T[]
     } catch (error) {
         console.error('Database query failed:', {
-            text,
+            statement,
             params,
             error: error instanceof Error ? error.message : String(error)
         })

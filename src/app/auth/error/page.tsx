@@ -37,9 +37,15 @@ const errorMessages: Record<string, { title: string; message: string; action: st
         action: 'ログイン',
         actionHref: '/api/auth/signin',
     },
+    invalid_session: {
+        title: '認証失敗',
+        message: '無効な認証セッションです。再試行してください。',
+        action: '再試行',
+        actionHref: '/',
+    },
     invalid_state: {
         title: '認証失敗',
-        message: '無効な認証状態です。再試行してください。',
+        message: '無効な認証セッションです。再試行してください。',
         action: '再試行',
         actionHref: '/',
     },

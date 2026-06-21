@@ -1,0 +1,643 @@
+openapi: 3.1.0
+info:
+  title: DataMaster SSO Authentication API
+  version: 1.0.0
+  description: |
+    # DataMaster SSO Flow - OAuth 2.0 + PKCE
+
+    **日本語**: このAPIは、DataMasterアプリケーションとSmart iMATE IDプロバイダー間のOAuth 2.0 + PKCE認証フローを実装します。AWS Cognitoをバックエンドとして使用し、マルチテナント対応のセキュアな認証を提供します。
+
+    **Tiếng Việt**: API này triển khai luồng xác thực OAuth 2.0 + PKCE giữa ứng dụng DataMaster và nhà cung cấp định danh Smart iMATE. Sử dụng AWS Cognito làm backend và cung cấp xác thực an toàn hỗ trợ đa tenant.
+
+    ## Security Features / セキュリティ機能 / Tính năng bảo mật
+
+    - **PKCE (RFC 7636)**: Prevents authorization code interception attacks
+      - **日本語**: 認可コード傍受攻撃を防止
+      - **Tiếng Việt**: Ngăn chặn tấn công đánh cắp mã ủy quyền
+
+    - **State Parameter**: CSRF protection via signed JWT
+      - **日本語**: 署名付きJWTによるCSRF保護
+      - **Tiếng Việt**: Bảo vệ CSRF qua JWT đã ký
+
+    - **Multi-Tenant Isolation**: Tenant-scoped cookies and validation
+      - **日本語**: テナント単位のCookieと検証
+      - **Tiếng Việt**: Cookie và xác thực theo phạm vi tenant
+
+    ## Architecture / アーキテクチャ / Kiến trúc
+
+    ```
+    DataMaster (Client)
+           ↕ OAuth 2.0 + PKCE
+    Smart iMATE (Identity Provider)
+           ↕ USER_PASSWORD_AUTH
+    AWS Cognito (User Pool)
+    ```
+
+servers:
+  - url: http://localhost:3000
+    description: |
+      **日本語**: DataMaster開発環境
+      **Tiếng Việt**: Môi trường phát triển DataMaster
+  - url: http://localhost:8080
+    description: |
+      **日本語**: Smart iMATE IDプロバイダー
+      **Tiếng Việt**: Nhà cung cấp định danh Smart iMATE
+
+tags:
+  - name: Phase 0
+    description: |
+      **EN**: Tenant Selection
+      **日本語**: テナント選択
+      **Tiếng Việt**: Chọn Tenant
+  - name: Phase 1
+    description: |
+      **EN**: Authorization Request
+      **日本語**: 認可リクエスト
+      **Tiếng Việt**: Yêu cầu ủy quyền
+  - name: Phase 2-3
+    description: |
+      **EN**: User Authentication & Code Generation
+      **日本語**: ユーザー認証とコード生成
+      **Tiếng Việt**: Xác thực người dùng và tạo mã
+  - name: Phase 4
+    description: |
+      **EN**: Token Exchange
+      **日本語**: トークン交換
+      **Tiếng Việt**: Trao đổi token
+  - name: Phase 5-7
+    description: |
+      **EN**: Session Creation & Dashboard
+      **日本語**: セッション作成とダッシュボード
+      **Tiếng Việt**: Tạo session và dashboard
+
+paths:
+  /:
+    get:
+      tags: [Phase 0]
+      summary: Tenant Selection Page
+      description: |
+        **日本語説明**:
+        ユーザーがログインするテナントを選択する初期ページです。データベースから有効なCognito認証情報を持つテナントリストを取得します。
+
+        **処理フロー**:
+        1. `buscomps` + `bkmasters` テーブルをクエリ
+        2. `cognito_credentials`が存在するテナントをフィルタ
+        3. テナント選択UIを表示
+
+        **Giải thích tiếng Việt**:
+        Trang ban đầu cho phép người dùng chọn tenant để đăng nhập. Hệ thống lấy danh sách tenant có thông tin đăng nhập Cognito hợp lệ từ cơ sở dữ liệu.
+
+        **Luồng xử lý**:
+        1. Truy vấn bảng `buscomps` + `bkmasters`
+        2. Lọc tenant có `cognito_credentials` tồn tại
+        3. Hiển thị giao diện chọn tenant
+
+      responses:
+        '200':
+          description: Tenant selection page rendered
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/auth/signin:
+    get:
+      tags: [Phase 1]
+      summary: Initiate OAuth Authorization
+      description: |
+        **日本語説明**:
+        OAuth 2.0 + PKCE認証フローを開始します。DataMasterがPKCEパラメータ（code_verifier、code_challenge）と署名付きstateトークンを生成し、Smart iMATEの認可エンドポイントにリダイレクトします。
+
+        **セキュリティメカニズム**:
+        - **code_verifier**: 32バイトのランダム値をbase64urlエンコード（256ビット）
+        - **code_challenge**: code_verifierのSHA-256ハッシュをbase64urlエンコード
+        - **state**: テナント、code_verifier、callbackUrlを含む署名付きJWT（HS256）
+
+        **Cookieに保存**:
+        - `oauth_state_{tenant}`: stateトークン（10分有効）
+        - `oauth_code_verifier_{tenant}`: PKCEのcode_verifier
+        - `oauth_tenant_{tenant}`: テナント識別子
+
+        **Giải thích tiếng Việt**:
+        Bắt đầu luồng xác thực OAuth 2.0 + PKCE. DataMaster tạo các tham số PKCE (code_verifier, code_challenge) và token state đã ký, sau đó chuyển hướng đến endpoint ủy quyền Smart iMATE.
+
+        **Cơ chế bảo mật**:
+        - **code_verifier**: Giá trị ngẫu nhiên 32 byte mã hóa base64url (256-bit)
+        - **code_challenge**: Hash SHA-256 của code_verifier mã hóa base64url
+        - **state**: JWT đã ký (HS256) chứa tenant, code_verifier, callbackUrl
+
+        **Lưu trong Cookie**:
+        - `oauth_state_{tenant}`: Token state (hiệu lực 10 phút)
+        - `oauth_code_verifier_{tenant}`: code_verifier PKCE
+        - `oauth_tenant_{tenant}`: Định danh tenant
+
+      parameters:
+        - name: tenant
+          in: query
+          required: true
+          description: |
+            **日本語**: テナント識別子（例: "kubota"）
+            **Tiếng Việt**: Định danh tenant (ví dụ: "kubota")
+          schema:
+            type: string
+            example: kubota
+
+      responses:
+        '302':
+          description: Redirect to Smart iMATE authorization endpoint
+          headers:
+            Location:
+              description: Smart iMATE OAuth authorize URL
+              schema:
+                type: string
+                example: http://localhost:8080/oauth2/authorize?client_id=1a2b3c4d&redirect_uri=http://localhost:3000/api/auth/callback&response_type=code&scope=openid+email+profile&state=eyJhbGc...&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256
+            Set-Cookie:
+              description: OAuth temporary cookies
+              schema:
+                type: array
+                items:
+                  type: string
+                example:
+                  - oauth_state_kubota=eyJhbGc...; Max-Age=600; HttpOnly; Secure; SameSite=Lax
+                  - oauth_code_verifier_kubota=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk; Max-Age=600; HttpOnly; Secure; SameSite=Lax
+                  - oauth_tenant_kubota=kubota; Max-Age=600; HttpOnly; Secure; SameSite=Lax
+
+  /{tenant}/login.php:
+    post:
+      tags: [Phase 2-3]
+      summary: User Authentication at Smart iMATE
+      description: |
+        **日本語説明**:
+        Smart iMATEでユーザー認証を行います。ユーザー名とパスワードを使用してAWS CognitoのUSER_PASSWORD_AUTHフローで認証し、成功した場合はCognitoトークン（access、ID、refresh）をサーバーセッションに保存します。
+
+        **認証フロー**:
+        1. ユーザー入力検証（username、password）
+        2. Cognito USER_PASSWORD_AUTHリクエスト送信
+        3. レスポンストークンをセッションに保存
+        4. 認可コード生成フェーズへ移行
+
+        **Giải thích tiếng Việt**:
+        Xác thực người dùng tại Smart iMATE. Sử dụng username và password để xác thực qua luồng USER_PASSWORD_AUTH của AWS Cognito, nếu thành công thì lưu token Cognito (access, ID, refresh) vào session server.
+
+        **Luồng xác thực**:
+        1. Xác thực đầu vào người dùng (username, password)
+        2. Gửi yêu cầu Cognito USER_PASSWORD_AUTH
+        3. Lưu token response vào session
+        4. Chuyển sang giai đoạn tạo mã ủy quyền
+
+      parameters:
+        - name: tenant
+          in: path
+          required: true
+          description: |
+            **日本語**: テナント識別子
+            **Tiếng Việt**: Định danh tenant
+          schema:
+            type: string
+            example: kubota
+
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  description: |
+                    **日本語**: Cognitoユーザー名
+                    **Tiếng Việt**: Username Cognito
+                  example: kubota
+                password:
+                  type: string
+                  format: password
+                  description: |
+                    **日本語**: ユーザーパスワード
+                    **Tiếng Việt**: Mật khẩu người dùng
+
+      responses:
+        '302':
+          description: |
+            **日本語**: 認証成功、認可コード生成へリダイレクト
+            **Tiếng Việt**: Xác thực thành công, chuyển hướng tạo mã ủy quyền
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /oauth2/authorize?client_id=1a2b3c4d...
+            Set-Cookie:
+              description: |
+                **日本語**: PHPセッションID
+                **Tiếng Việt**: PHP session ID
+              schema:
+                type: string
+                example: PHPSESSID=abc123...; Path=/; HttpOnly; Secure
+
+        '401':
+          description: |
+            **日本語**: 認証失敗（無効な認証情報）
+            **Tiếng Việt**: Xác thực thất bại (thông tin đăng nhập không hợp lệ)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: InvalidCredentials
+                  message:
+                    type: string
+                    description: |
+                      **日本語**: エラーメッセージ
+                      **Tiếng Việt**: Thông báo lỗi
+
+  /oauth2/authorize:
+    get:
+      tags: [Phase 2-3]
+      summary: Generate Authorization Code
+      description: |
+        **日本語説明**:
+        ユーザー認証後、Smart iMATEが認可コードを生成します。このコードはRS256署名付きJWT形式で、10分間有効です。Cognitoセッションと紐付けられ、DataMasterのcallback URLにリダイレクトされます。
+
+        **認可コードJWT構造**:
+        ```json
+        {
+          "sub": "kubota",
+          "client_id": "1a2b3c4d5e6f7g8h",
+          "redirect_uri": "http://localhost:3000/api/auth/callback",
+          "scope": "openid email profile",
+          "exp": 1718813400,  // 10分後
+          "iat": 1718812800,
+          "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        }
+        ```
+
+        **Giải thích tiếng Việt**:
+        Sau khi xác thực người dùng, Smart iMATE tạo mã ủy quyền. Mã này là JWT có chữ ký RS256, hiệu lực 10 phút. Nó được liên kết với session Cognito và chuyển hướng về callback URL của DataMaster.
+
+        **Cấu trúc JWT mã ủy quyền**:
+        ```json
+        {
+          "sub": "kubota",
+          "client_id": "1a2b3c4d5e6f7g8h",
+          "redirect_uri": "http://localhost:3000/api/auth/callback",
+          "scope": "openid email profile",
+          "exp": 1718813400,  // Hết hạn sau 10 phút
+          "iat": 1718812800,
+          "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        }
+        ```
+
+      parameters:
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            example: openid email profile
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            description: |
+              **日本語**: DataMasterから渡された署名付きstate JWT
+              **Tiếng Việt**: JWT state đã ký từ DataMaster
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+            description: |
+              **日本語**: PKCE code_challenge (SHA-256 base64url)
+              **Tiếng Việt**: PKCE code_challenge (SHA-256 base64url)
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+
+      responses:
+        '302':
+          description: |
+            **日本語**: 認可コード生成成功、DataMasterへリダイレクト
+            **Tiếng Việt**: Tạo mã ủy quyền thành công, chuyển hướng về DataMaster
+          headers:
+            Location:
+              schema:
+                type: string
+                example: http://localhost:3000/api/auth/callback?code=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&state=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+  /api/auth/callback:
+    get:
+      tags: [Phase 4]
+      summary: Token Exchange - Authorization Code for Tokens
+      description: |
+        **日本語説明**:
+        DataMasterがSmart iMATEから受け取った認可コードをアクセストークンと交換します。このフェーズではPKCE検証、state検証、client認証が行われます。
+
+        **処理ステップ**:
+        1. **State検証**: URLのstateとCookieのstateを比較（CSRF対策）
+        2. **Code verifier取得**: Cookieから`oauth_code_verifier_{tenant}`を取得
+        3. **Tenant config解決**: データベースからclient_id、client_secretなどを取得
+        4. **Token exchange**: Smart iMATE `/oauth2/token`エンドポイントへPOSTリクエスト
+        5. **PKCE検証**: Smart iMATEがSHA256(code_verifier) === stored_code_challengeを確認
+        6. **Tokenレスポンス**: access_token、id_token、refresh_tokenを受信
+
+        **セキュリティ検証**:
+        - Authorization code JWT署名検証（RS256）
+        - Code有効期限検証（10分）
+        - PKCE検証: `SHA256(code_verifier) === code_challenge`
+        - Client認証: client_id + client_secret
+        - Redirect URI完全一致
+        - 認可コード使用済みチェック（ブラックリスト）
+
+        **Giải thích tiếng Việt**:
+        DataMaster đổi mã ủy quyền nhận từ Smart iMATE lấy access token. Giai đoạn này thực hiện xác thực PKCE, state và client.
+
+        **Các bước xử lý**:
+        1. **Xác thực State**: So sánh state trong URL với Cookie (chống CSRF)
+        2. **Lấy Code verifier**: Lấy `oauth_code_verifier_{tenant}` từ Cookie
+        3. **Giải quyết Tenant config**: Lấy client_id, client_secret từ database
+        4. **Đổi token**: POST request đến endpoint `/oauth2/token` Smart iMATE
+        5. **Xác thực PKCE**: Smart iMATE kiểm tra SHA256(code_verifier) === stored_code_challenge
+        6. **Token response**: Nhận access_token, id_token, refresh_token
+
+        **Xác thực bảo mật**:
+        - Xác thực chữ ký JWT mã ủy quyền (RS256)
+        - Kiểm tra hết hạn code (10 phút)
+        - Xác thực PKCE: `SHA256(code_verifier) === code_challenge`
+        - Xác thực Client: client_id + client_secret
+        - Khớp hoàn toàn Redirect URI
+        - Kiểm tra mã ủy quyền đã sử dụng (blacklist)
+
+      parameters:
+        - name: code
+          in: query
+          required: true
+          description: |
+            **日本語**: 認可コードJWT（Smart iMATEから発行）
+            **Tiếng Việt**: JWT mã ủy quyền (do Smart iMATE phát hành)
+          schema:
+            type: string
+            example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+
+        - name: state
+          in: query
+          required: true
+          description: |
+            **日本語**: 署名付きstate JWT（検証用）
+            **Tiếng Việt**: JWT state đã ký (để xác thực)
+          schema:
+            type: string
+
+      responses:
+        '302':
+          description: |
+            **日本語**: Token取得成功、ダッシュボードへリダイレクト
+            **Tiếng Việt**: Lấy token thành công, chuyển hướng đến dashboard
+          headers:
+            Location:
+              schema:
+                type: string
+                example: /dashboard
+            Set-Cookie:
+              description: |
+                **日本語**: セッションJWT Cookie（30日有効）
+                **Tiếng Việt**: Session JWT Cookie (hiệu lực 30 ngày)
+              schema:
+                type: string
+                example: session=eyJhbGc...; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax; Path=/
+
+        '400':
+          description: |
+            **日本語**: 無効なリクエスト（state不一致、code無効など）
+            **Tiếng Việt**: Yêu cầu không hợp lệ (state không khớp, code không hợp lệ)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /oauth2/token:
+    post:
+      tags: [Phase 4]
+      summary: Smart iMATE Token Endpoint
+      description: |
+        **日本語説明**:
+        Smart iMATEのトークンエンドポイント。認可コードをCognitoトークンと交換します。PKCE検証とclient認証を実行します。
+
+        **検証プロセス**:
+        1. Authorization code JWT検証（署名、有効期限）
+        2. PKCE検証: `SHA256(code_verifier) === stored_code_challenge`
+        3. Client認証: client_id + client_secret
+        4. Redirect URI完全一致確認
+        5. セッションからCognitoトークン取得
+        6. 認可コードをブラックリストに追加（再利用防止）
+
+        **Giải thích tiếng Việt**:
+        Token endpoint của Smart iMATE. Đổi mã ủy quyền lấy token Cognito. Thực hiện xác thực PKCE và client.
+
+        **Quy trình xác thực**:
+        1. Xác thực JWT mã ủy quyền (chữ ký, hết hạn)
+        2. Xác thực PKCE: `SHA256(code_verifier) === stored_code_challenge`
+        3. Xác thực Client: client_id + client_secret
+        4. Xác nhận Redirect URI khớp hoàn toàn
+        5. Lấy token Cognito từ session
+        6. Thêm mã ủy quyền vào blacklist (ngăn tái sử dụng)
+
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+                - client_id
+                - client_secret
+                - code
+                - redirect_uri
+                - code_verifier
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code]
+                client_id:
+                  type: string
+                  example: 1a2b3c4d5e6f7g8h
+                client_secret:
+                  type: string
+                  example: 9i8h7g6f5e4d3c2b1a
+                code:
+                  type: string
+                  description: |
+                    **日本語**: 認可コードJWT
+                    **Tiếng Việt**: JWT mã ủy quyền
+                redirect_uri:
+                  type: string
+                  format: uri
+                  example: http://localhost:3000/api/auth/callback
+                code_verifier:
+                  type: string
+                  description: |
+                    **日本語**: PKCEのcode_verifier（256ビット base64url）
+                    **Tiếng Việt**: PKCE code_verifier (256-bit base64url)
+                  example: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+
+      responses:
+        '200':
+          description: |
+            **日本語**: Token交換成功
+            **Tiếng Việt**: Đổi token thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+        '400':
+          description: |
+            **日本語**: PKCE検証失敗またはclient認証失敗
+            **Tiếng Việt**: Xác thực PKCE hoặc client thất bại
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /dashboard:
+    get:
+      tags: [Phase 5-7]
+      summary: Authenticated Dashboard
+      description: |
+        **日本語説明**:
+        認証済みユーザーのダッシュボード。セッションJWT Cookieで保護されています。
+
+        **表示内容**:
+        - ユーザー情報（名前、メール、サブ）
+        - テナントコンテキスト
+        - Smart iMATEへのSSOナビゲーションボタン
+
+        **セッション検証**:
+        - Cookie `session` JWT検証（HS256）
+        - 有効期限チェック（30日）
+        - テナント境界確認
+
+        **Giải thích tiếng Việt**:
+        Dashboard người dùng đã xác thực. Được bảo vệ bởi Session JWT Cookie.
+
+        **Nội dung hiển thị**:
+        - Thông tin người dùng (tên, email, sub)
+        - Ngữ cảnh tenant
+        - Nút điều hướng SSO đến Smart iMATE
+
+        **Xác thực session**:
+        - Xác thực Cookie `session` JWT (HS256)
+        - Kiểm tra hết hạn (30 ngày)
+        - Xác nhận ranh giới tenant
+
+      security:
+        - sessionCookie: []
+
+      responses:
+        '200':
+          description: |
+            **日本語**: ダッシュボードページ表示
+            **Tiếng Việt**: Hiển thị trang dashboard
+          content:
+            text/html:
+              schema:
+                type: string
+
+        '401':
+          description: |
+            **日本語**: 未認証、ログインページへリダイレクト
+            **Tiếng Việt**: Chưa xác thực, chuyển hướng đến trang đăng nhập
+
+components:
+  schemas:
+    TokenResponse:
+      type: object
+      description: |
+        **日本語**: Smart iMATEからのトークンレスポンス（Cognito由来）
+        **Tiếng Việt**: Token response từ Smart iMATE (nguồn từ Cognito)
+      properties:
+        access_token:
+          type: string
+          description: |
+            **日本語**: アクセストークンJWT（1時間有効）
+            **Tiếng Việt**: JWT access token (hiệu lực 1 giờ)
+          example: eyJraWQiOiJhYmMxMjMiLCJhbGciOiJSUzI1NiJ9...
+        id_token:
+          type: string
+          description: |
+            **日本語**: IDトークンJWT（ユーザー属性含む）
+            **Tiếng Việt**: JWT ID token (chứa thuộc tính người dùng)
+          example: eyJraWQiOiJkZWY0NTYiLCJhbGciOiJSUzI1NiJ9...
+        refresh_token:
+          type: string
+          description: |
+            **日本語**: リフレッシュトークン（暗号化、30日有効）
+            **Tiếng Việt**: Token refresh (mã hóa, hiệu lực 30 ngày)
+          example: eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ...
+        expires_in:
+          type: integer
+          description: |
+            **日本語**: アクセストークン有効期限（秒）
+            **Tiếng Việt**: Thời gian hết hạn access token (giây)
+          example: 3600
+        token_type:
+          type: string
+          enum: [Bearer]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: |
+            **日本語**: エラーコード
+            **Tiếng Việt**: Mã lỗi
+          example: invalid_grant
+        error_description:
+          type: string
+          description: |
+            **日本語**: エラー詳細
+            **Tiếng Việt**: Mô tả chi tiết lỗi
+          example: PKCE verification failed
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        **日本語**: Cognito Access Token JWT（1時間有効）
+        **Tiếng Việt**: JWT Cognito Access Token (hiệu lực 1 giờ)
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: |
+        **日本語**: セッションJWT Cookie（HS256署名、30日有効）
+        **Tiếng Việt**: Session JWT Cookie (chữ ký HS256, hiệu lực 30 ngày)
