@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
-        // 1. Redirect to /{tenant}/login.php with minimal broker params (client_id, redirect_uri, session, code_challenge)
+        // 1. Redirect to Smart iMATE with minimal browser-carried broker params
         // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
         // 3. login.php stores Cognito tokens in session
         // 4. login.php redirects to /oauth2/authorize with same OAuth params
@@ -87,12 +87,8 @@ export async function GET(request: NextRequest) {
         // 7. DataMaster exchanges code at /oauth2/token
         // 8. /oauth2/token returns Cognito tokens (access_token, id_token, refresh_token)
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
-        authUrl.searchParams.set('app', 'datamaster')
-        authUrl.searchParams.set('client_id', config.clientId)
-        authUrl.searchParams.set('scope', 'openid email profile')
         authUrl.searchParams.set('redirect_uri', redirectUri)
-        authUrl.searchParams.set('session', oauthSession)
-        authUrl.searchParams.set('tenant', tenant)
+        authUrl.searchParams.set('state', oauthSession)
         authUrl.searchParams.set('code_challenge', codeChallenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
 
