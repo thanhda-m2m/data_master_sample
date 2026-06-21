@@ -74,7 +74,6 @@ export async function GET(request: NextRequest) {
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
 
         const redirectUri = `${requestOrigin}/api/auth/callback`
-        console.log('[SIGNIN] Redirecting to Smart iMATE:', {smartiMateBaseUrl, redirectUri})
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
@@ -99,14 +98,6 @@ export async function GET(request: NextRequest) {
         const codeVerifierCookieName = `oauth_code_verifier_${tenant}`
         const callbackCookieName = `oauth_callback_url_${tenant}`
         const tenantCookieName = `oauth_tenant_${tenant}`
-
-        console.log('[SIGNIN] Setting cookies:', {
-            tenant,
-            stateCookieName,
-            codeVerifierCookieName,
-            codeVerifier: codeVerifier.substring(0, 10) + '...',
-            codeChallenge: codeChallenge.substring(0, 10) + '...',
-        })
 
         const destination = authUrl.toString()
         const html = `<!doctype html>

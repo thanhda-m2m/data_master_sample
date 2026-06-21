@@ -30,7 +30,7 @@ async function fetchCognitoGetUser(accessToken: string, region: string): Promise
             'X-Amz-Target': 'AWSCognitoIdentityProviderService.GetUser',
         },
         body: JSON.stringify({AccessToken: accessToken}),
-    })
+    });
 
     if (!response.ok) {
         throw new Error(await response.text())
@@ -85,14 +85,6 @@ export async function GET(request: NextRequest) {
         name => cookieStore.get(name)?.value
     )
 
-    console.log('[CALLBACK] Reading cookies:', {
-        stateTenant,
-        cookieTenant,
-        storedState: storedState?.substring(0, 10) + '...',
-        codeVerifier: codeVerifier?.substring(0, 10) + '...',
-        allCookies: Array.from(cookieStore.getAll().map(c => c.name)),
-    })
-
     // Priority: subdomain > OAuth session JWT > cookie
     const tenant = subdomainTenant || stateTenant || cookieTenant
 
@@ -129,11 +121,6 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=tenant_not_found', requestOrigin))
         }
 
-        console.log('[CALLBACK] Tenant config:', {
-            tenant,
-            cognitoUserInfoUrl: config.cognitoUserInfoUrl,
-            region: config.region,
-        })
 
         // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
         // login.php authenticates via Cognito USER_PASSWORD_AUTH, stores Cognito tokens in session.
@@ -143,15 +130,6 @@ export async function GET(request: NextRequest) {
         // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
         const redirectUri = `${requestOrigin}/api/auth/callback`
 
-        console.log('[CALLBACK] Token exchange params:', {
-            redirectUri,
-            tokenUrl: config.smartimateTokenUrl,
-            headers: {
-                host: request.headers.get('host'),
-                'x-forwarded-proto': request.headers.get('x-forwarded-proto'),
-                'x-forwarded-host': request.headers.get('x-forwarded-host'),
-            },
-        })
         const tokenParams = new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: config.clientId,
@@ -162,13 +140,6 @@ export async function GET(request: NextRequest) {
         if (config.clientSecret) {
             tokenParams.set('client_secret', config.clientSecret)
         }
-
-        console.log('[CALLBACK] Token exchange request:', {
-            url: config.smartimateTokenUrl,
-            redirectUri,
-            clientId: config.clientId,
-            bodyParams: Object.fromEntries(tokenParams.entries()),
-        })
 
         let tokenResponse
         try {
@@ -219,11 +190,6 @@ export async function GET(request: NextRequest) {
 
             if (tokenParts.length >= 2) {
                 const tokenPayload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
-                console.log('[CALLBACK] Token decoded:', {
-                    iss: tokenPayload.iss,
-                    client_id: tokenPayload.client_id,
-                    token_use: tokenPayload.token_use,
-                })
 
                 // Extract region and pool from issuer
                 // Format: https://cognito-idp.{region}.amazonaws.com/{poolId}
@@ -233,17 +199,8 @@ export async function GET(request: NextRequest) {
                     actualRegion = tokenRegion
                     // Build userInfo URL from token's issuer, not DB config
                     actualUserInfoUrl = `https://cognito-idp.${tokenRegion}.amazonaws.com/${poolId}`
-                    console.log('[CALLBACK] Using token issuer for userInfo:', {
-                        actualRegion,
-                        actualUserInfoUrl,
-                    })
                 }
             }
-
-            console.log('[CALLBACK] Fetching user with token:', {
-                accessToken: tokens.access_token.substring(0, 20) + '...',
-                userInfoUrl: actualUserInfoUrl,
-            })
 
             // Call GetUser directly with token's pool
             payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
