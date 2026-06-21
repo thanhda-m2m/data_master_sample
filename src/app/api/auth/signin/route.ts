@@ -10,7 +10,7 @@ import {normalizeOAuthCallbackUrl, signOAuthState} from '@/lib/oauth-state'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
     const normalizedBase = baseUrl.replace(/\/+$/, '')
-    return new URL(`/${tenant}/login.php`, normalizedBase)
+    return new URL(`/${tenant}/oauth2/authorize`, normalizedBase)
 }
 
 function escapeHtml(value: string) {
