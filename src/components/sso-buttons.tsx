@@ -42,7 +42,10 @@ export function SsoButton({target, tenant, accessToken, label}: SsoButtonProps) 
         <button
             onClick={handleClick}
             disabled={loading}
-            className="flex items-center justify-center gap-2 rounded-lg bg-orange-500 hover:bg-orange-600 active:bg-orange-700 px-6 py-3 text-base font-semibold text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+            className="flex items-center justify-center gap-2 rounded-lg bg-orange-500
+             hover:bg-orange-600 active:bg-orange-700 px-6 py-3 text-base font-semibold
+             text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+             focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
         >
             {loading ? (
                 <>
