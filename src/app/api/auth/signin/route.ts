@@ -6,7 +6,7 @@ import {logAuditEvent} from '@/lib/audit-log'
 import {resolveSigninTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
-import {signOAuthState} from '@/lib/oauth-state'
+import {normalizeOAuthCallbackUrl, signOAuthState} from '@/lib/oauth-state'
 
 function buildSmartiMateLoginUrl(baseUrl: string, tenant: string) {
     const normalizedBase = baseUrl.replace(/\/+$/, '')
@@ -26,7 +26,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const queryTenant = searchParams.get('tenant')
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
-    const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+    const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
+    const callbackUrl = normalizeOAuthCallbackUrl(
+        searchParams.get('redirect_url') || searchParams.get('callbackUrl'),
+        requestOrigin
+    )
 
     // Priority: subdomain > submitted selection > cookie fallback.
     const {tenantCode: tenant} = resolveSigninTenant(
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate callback URL (prevent open redirect)
-    if (!callbackUrl.startsWith('/') || callbackUrl.startsWith('//')) {
+    if (!callbackUrl) {
         return Response.json({error: 'Invalid callback URL'}, {status: 400})
     }
 
@@ -69,13 +73,12 @@ export async function GET(request: NextRequest) {
 
         const smartiMateBaseUrl = process['env']['SMARTIMATE_BASE_URL'] || 'http://localhost:8080'
 
-        const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
         const redirectUri = `${requestOrigin}/api/auth/callback`
         console.log('[SIGNIN] Redirecting to Smart iMATE:', {smartiMateBaseUrl, redirectUri})
 
         // Smart iMATE login.php is the entry point for authentication
         // Flow:
-        // 1. Redirect to /{tenant}/login.php with OAuth params (client_id, redirect_uri, session, code_challenge)
+        // 1. Redirect to /{tenant}/login.php with minimal broker params (client_id, redirect_uri, session, code_challenge)
         // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
         // 3. login.php stores Cognito tokens in session
         // 4. login.php redirects to /oauth2/authorize with same OAuth params
@@ -89,6 +92,7 @@ export async function GET(request: NextRequest) {
         authUrl.searchParams.set('scope', 'openid email profile')
         authUrl.searchParams.set('redirect_uri', redirectUri)
         authUrl.searchParams.set('session', oauthSession)
+        authUrl.searchParams.set('tenant', tenant)
         authUrl.searchParams.set('code_challenge', codeChallenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
 
