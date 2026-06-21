@@ -17,12 +17,14 @@ type CognitoUserPayload = {
     given_name?: string
     family_name?: string
     tenant_id?: string
+    phonenumber?: string
 }
 
 async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
     const endpoint =
         process['env']['AWS' + '_ENDPOINT_URL'] ||
-        `https://cognito-idp.${region}.amazonaws.com/`
+        `https://cognito-idp.${region}.amazonaws.com/`;
+
     const response = await fetch(endpoint.endsWith('/') ? endpoint : `${endpoint}/`, {
         method: 'POST',
         headers: {
@@ -54,6 +56,7 @@ async function fetchCognitoGetUser(accessToken: string, region: string): Promise
         given_name: attributes.given_name || '',
         family_name: attributes.family_name || '',
         tenant_id: attributes['custom:tenant_id'] || attributes.tenant_id || '',
+        phonenumber: attributes.phone_number || '',
     }
 }
 
@@ -225,6 +228,7 @@ export async function GET(request: NextRequest) {
             sub: payload.sub,
             email: payload.email,
             name: userName,
+            phonenumber: payload.phonenumber,
             tenant,
             expiresAt: Math.floor(Date.now() / 1000) + Number(tokens.expires_in || 3600) - 60,
         })

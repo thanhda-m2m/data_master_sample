@@ -38,6 +38,12 @@ export default async function DashboardPage() {
                             <dt className="font-semibold text-slate-700">表示名</dt>
                             <dd className="text-slate-600 text-right">{session.user.name}</dd>
                         </div>
+
+                        <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+                            <dt className="font-semibold text-slate-700">電話番号</dt>
+                            <dd className="text-slate-600 text-right font-mono text-sm">{session.user.phoneNumber}</dd>
+                        </div>
+
                         <div className="flex items-start justify-between pb-4 border-b border-slate-100">
                             <dt className="font-semibold text-slate-700">ユーザーID</dt>
                             <dd className="text-slate-600 text-right font-mono text-xs bg-slate-100 px-3 py-1 rounded">{session.user.id}</dd>

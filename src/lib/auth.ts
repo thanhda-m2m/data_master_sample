@@ -8,6 +8,7 @@ export interface Session {
         id: string
         email: string
         name: string
+        phoneNumber?: string
     }
     tenant: string
     accessToken?: string
@@ -43,6 +44,7 @@ export async function getSession(): Promise<Session | null> {
                 id: payload.sub as string,
                 email: payload.email as string,
                 name: payload.name as string,
+                phoneNumber: typeof payload.phonenumber === 'string' ? payload.phonenumber : undefined,
             },
             tenant: payload.tenant as string,
             accessToken: typeof payload.accessToken === 'string' ? payload.accessToken : undefined,
