@@ -20,6 +20,16 @@ type CognitoUserPayload = {
     phonenumber?: string
 }
 
+type TokenExchangeResponse = {
+    access_token?: string
+    refresh_token?: string
+    id_token?: string
+    token_type?: string
+    expires_in?: number
+    scope?: string
+    token_source?: string
+}
+
 async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
     const endpoint =
         process['env']['AWS' + '_ENDPOINT_URL'] ||
@@ -60,6 +70,41 @@ async function fetchCognitoGetUser(accessToken: string, region: string): Promise
     }
 }
 
+function smartiMateUserInfoUrlFromTokenUrl(tokenUrl: string, tenant: string) {
+    const url = new URL(tokenUrl)
+    url.pathname = `/${tenant}/oauth2/userinfo`
+    return url.toString()
+}
+
+async function fetchSmartiMateUserInfo(accessToken: string, tokenUrl: string, tenant: string): Promise<CognitoUserPayload> {
+    const response = await fetch(smartiMateUserInfoUrlFromTokenUrl(tokenUrl, tenant), {
+        method: 'GET',
+        headers: {Authorization: `Bearer ${accessToken}`},
+        cache: 'no-store',
+    })
+
+    if (!response.ok) {
+        throw new Error(await response.text())
+    }
+
+    const result = await response.json() as {
+        sub?: string
+        email?: string
+        name?: string
+        tenant_id?: string
+        phone_number?: string
+        phonenumber?: string
+    }
+
+    return {
+        sub: result.sub,
+        email: result.email,
+        name: result.name,
+        tenant_id: result.tenant_id,
+        phonenumber: result.phonenumber || result.phone_number,
+    }
+}
+
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get('code')
@@ -77,7 +122,6 @@ export async function GET(request: NextRequest) {
     const signedState = await readSignedOAuthState(oauthSession)
     const {
         stateTenant,
-        storedState,
         codeVerifier,
         cookieTenant,
         callbackUrl,
@@ -174,10 +218,8 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
         }
 
-        // Token response contains Cognito tokens (access_token, id_token, refresh_token)
-        // These are the actual Cognito tokens, NOT Smart iMATE JWT tokens
-        // Smart iMATE only brokered the authentication and code exchange
-        const tokens = await tokenResponse.json()
+        // Normal login returns Cognito tokens. Admin impersonation returns a Smart iMATE JWT.
+        const tokens = await tokenResponse.json() as TokenExchangeResponse
 
         if (!tokens.access_token) {
             console.error('Token response missing access token:', {tenant})
@@ -186,30 +228,32 @@ export async function GET(request: NextRequest) {
 
         let payload: CognitoUserPayload
         try {
-            // Decode token to find actual issuer (Smart iMATE's Cognito pool)
-            const tokenParts = tokens.access_token.split('.')
-            let actualUserInfoUrl = config.cognitoUserInfoUrl
-            let actualRegion = config.region
+            if (tokens.token_source === 'smartimate_impersonation') {
+                payload = await fetchSmartiMateUserInfo(tokens.access_token, config.smartimateTokenUrl, tenant)
+            } else {
+                // Decode token to find actual issuer (Smart iMATE's Cognito pool)
+                const tokenParts = tokens.access_token.split('.')
+                let actualRegion = config.region
 
-            if (tokenParts.length >= 2) {
-                const tokenPayload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
+                if (tokenParts.length >= 2) {
+                    const tokenPayload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
 
-                // Extract region and pool from issuer
-                // Format: https://cognito-idp.{region}.amazonaws.com/{poolId}
-                const issuerMatch = tokenPayload.iss?.match(/cognito-idp\.([^.]+)\.amazonaws\.com\/([^/]+)/)
-                if (issuerMatch) {
-                    const [, tokenRegion, poolId] = issuerMatch
-                    actualRegion = tokenRegion
-                    // Build userInfo URL from token's issuer, not DB config
-                    actualUserInfoUrl = `https://cognito-idp.${tokenRegion}.amazonaws.com/${poolId}`
+                    // Extract region and pool from issuer
+                    // Format: https://cognito-idp.{region}.amazonaws.com/{poolId}
+                    const issuerMatch = tokenPayload.iss?.match(/cognito-idp\.([^.]+)\.amazonaws\.com\/([^/]+)/)
+                    if (issuerMatch) {
+                        const [, tokenRegion] = issuerMatch
+                        actualRegion = tokenRegion
+                    }
                 }
-            }
 
-            // Call GetUser directly with token's pool
-            payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
+                // Call GetUser directly with token's pool
+                payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
+            }
         } catch (error) {
-            console.error('Cognito userInfo failed:', {
+            console.error('UserInfo failed:', {
                 tenant,
+                tokenSource: tokens.token_source || 'cognito',
                 error: error instanceof Error ? error.message : String(error)
             })
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
