@@ -11,12 +11,18 @@ import {buildOrchestratorPrompt} from './prompts/orchestrator-prompt';
  * Uses OpenAI function calling to select the appropriate agent based on form state.
  */
 export class InputSupportOrchestrator {
-    private openai: OpenAI;
+    private readonly openai: OpenAI;
     private simpleAssistAgent: SimpleAssistAgent;
     private qualityCheckAgent: QualityCheckAgent;
 
     constructor(apiKey: string) {
-        this.openai = new OpenAI({apiKey});
+        this.openai = new OpenAI({
+            baseURL: 'https://chat.trollllm.xyz/v1',
+            apiKey,
+            defaultHeaders: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
         this.simpleAssistAgent = new SimpleAssistAgent(this.openai);
         this.qualityCheckAgent = new QualityCheckAgent(this.openai);
     }
@@ -84,7 +90,7 @@ export class InputSupportOrchestrator {
             const systemPrompt = buildOrchestratorPrompt(phase, fieldData);
 
             const response = await this.openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: 'claude-haiku-4-5-20251001',
                 messages: [
                     {role: 'system', content: systemPrompt},
                     {role: 'user', content: userMessage}
