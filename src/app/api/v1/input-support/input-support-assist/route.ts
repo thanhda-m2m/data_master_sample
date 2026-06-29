@@ -6,15 +6,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-    // Handle CORS preflight
-    const origin = request.headers.get('origin');
-    const corsHeaders = {
-        'Access-Control-Allow-Origin': origin || '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
-        'Access-Control-Allow-Credentials': 'true'
-    };
-
     let body;
     try {
         const rawBody = await request.json();
@@ -67,57 +58,55 @@ export async function POST(request: NextRequest) {
                 for (const char of result.message) {
                     const tokenEvent: TokenEvent = {type: 'token', content: char};
                     controller.enqueue(
-                        encoder.encode(`event: token\ndata: ${JSON.stringify({token: char})}\n\n`)
+                        encoder.encode(`data: ${JSON.stringify(tokenEvent)}\n\n`)
                     );
                     await new Promise(resolve => setTimeout(resolve, 20));
                 }
 
-                // Build done event response matching requirement spec
-                const doneData = {
-                    ai_message: result.message,
-                    update_data: [] as any[],
-                    next_actions_suggestions: [] as any[],
-                    quality_results: [] as any[]
+                const doneEvent: DoneEvent = {
+                    type: 'done',
+                    phase: result.phase,
+                    structured_data: {}
                 };
 
                 if (result.parsed.jsonData) {
                     if (result.phase === 'phase_1') {
                         const {field_id, field_name, field_value} = result.parsed.jsonData;
                         if (field_id && field_name) {
-                            doneData.update_data.push({
+                            doneEvent.structured_data = {
                                 field_id,
                                 field_name,
-                                field_value: field_value ?? null
-                            });
-                            doneData.next_actions_suggestions.push({
-                                label: "反映",
-                                action_id: "apply_updates"
-                            });
+                                field_value: field_value ?? undefined
+                            };
                         }
                     } else if (result.phase === 'phase_2') {
                         const {field_id, field_name, is_valid, confidence, reason} = result.parsed.jsonData;
-                        if (field_id && field_name && typeof is_valid === 'boolean') {
-                            doneData.quality_results.push({
-                                field_id,
-                                field_name,
-                                result: is_valid ? "○" : "×",
-                                reason: reason || ""
-                            });
+                        if (field_id && field_name && typeof is_valid === 'boolean' && typeof confidence === 'number' && reason) {
+                            doneEvent.structured_data = {
+                                evaluation: {
+                                    field_id,
+                                    field_name,
+                                    is_valid,
+                                    confidence,
+                                    reason
+                                }
+                            };
                         }
                     }
                 }
 
                 controller.enqueue(
-                    encoder.encode(`event: done\ndata: ${JSON.stringify(doneData)}\n\n`)
+                    encoder.encode(`data: ${JSON.stringify(doneEvent)}\n\n`)
                 );
 
                 controller.close();
             } catch (error) {
-                const errorEvent = {
+                const errorEvent: ErrorEvent = {
+                    type: 'error',
                     message: error instanceof Error ? error.message : 'Unknown error'
                 };
                 controller.enqueue(
-                    encoder.encode(`event: error\ndata: ${JSON.stringify(errorEvent)}\n\n`)
+                    encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`)
                 );
                 controller.close();
             }
@@ -129,22 +118,7 @@ export async function POST(request: NextRequest) {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
-            'X-Accel-Buffering': 'no',
-            ...corsHeaders
-        }
-    });
-}
-
-// Handle OPTIONS for CORS preflight
-export async function OPTIONS(request: NextRequest) {
-    const origin = request.headers.get('origin');
-    return new Response(null, {
-        status: 204,
-        headers: {
-            'Access-Control-Allow-Origin': origin || '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
-            'Access-Control-Allow-Credentials': 'true'
+            'X-Accel-Buffering': 'no'
         }
     });
 }
