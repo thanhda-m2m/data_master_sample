@@ -90,7 +90,7 @@ export class InputSupportOrchestrator {
             const systemPrompt = buildOrchestratorPrompt(phase, fieldData);
 
             const response = await this.openai.chat.completions.create({
-                model: 'claude-haiku-4-5-20251001',
+                model: 'claude-sonnet-4-6',
                 messages: [
                     {role: 'system', content: systemPrompt},
                     {role: 'user', content: userMessage}
@@ -99,8 +99,14 @@ export class InputSupportOrchestrator {
                 tool_choice: 'required'
             });
 
+            console.log('[DEBUG] Response:', JSON.stringify({
+                choice: response.choices[0]?.message,
+                tool_calls: response.choices[0]?.message?.tool_calls
+            }, null, 2));
+
             const toolCall = response.choices[0]?.message?.tool_calls?.[0];
             if (!toolCall || toolCall.type !== 'function') {
+                console.error('[DEBUG] No tool call. Full response:', JSON.stringify(response, null, 2));
                 throw new Error('No function tool call returned from orchestrator');
             }
 

@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap');
+
+:root {
+    --background: #f8fafc;
+    --foreground: #1e293b;
+    --primary: #2563eb;
+    --primary-light: #3b82f6;
+    --cta: #f97316;
+    --text-muted: #64748b;
+    --border-color: #e2e8f0;
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: 'Plus Jakarta Sans', var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background: #0f172a;
+        --foreground: #f1f5f9;
+        --text-muted: #cbd5e1;
+        --border-color: #334155;
+    }
+}
+
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    transition: background-color 150ms ease, color 150ms ease;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+/* Flat Design: No shadows by default, smooth transitions */
+button, a, input {
+    transition: background-color 150ms ease, color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+/* Accessibility: respect prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+    body, button, a, input {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/* Fireworks animation */
+@keyframes firework-burst {
+    0% {
+        opacity: 1;
+        transform: translate(var(--tx), var(--ty)) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(calc(var(--tx) * 3), calc(var(--ty) * 3)) scale(0);
+    }
+}
+
+.firework {
+    animation: firework-burst 0.8s ease-out forwards;
+    pointer-events: none;
+}

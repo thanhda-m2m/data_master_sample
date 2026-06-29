@@ -38,7 +38,7 @@ export class SimpleAssistAgent {
 
         try {
             const response = await this.openai.chat.completions.create({
-                model: 'gpt-4o',
+                model: 'claude-sonnet-4-6',
                 messages,
                 temperature: 0.7,
                 max_tokens: 500
