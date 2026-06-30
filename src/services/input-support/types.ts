@@ -111,6 +111,11 @@ export interface ParsedAgentOutput {
         is_valid?: boolean;
         confidence?: number;
         reason?: string;
+        updates?: Array<{
+            field_id: string;
+            field_name: string;
+            field_value: string;
+        }>;
     };
     evaluation?: string;
 }
