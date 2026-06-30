@@ -41,6 +41,11 @@ export async function proxy(request: NextRequest) {
     const {pathname} = request.nextUrl
     const hostname = request.headers.get('host') || ''
 
+    // Skip tenant validation for host.docker.internal (Docker bridge network)
+    if (hostname.includes('host.docker.internal')) {
+        return NextResponse.next()
+    }
+
     // Detect tenant from subdomain or cookie
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const {tenantCode, source} = detectTenant(hostname, cookieTenant)
@@ -85,7 +90,8 @@ export async function proxy(request: NextRequest) {
         pathname.startsWith('/api/admin') ||
         pathname === '/api/oauth/register-provider' ||
         pathname.startsWith('/auth') ||
-        pathname === '/api/test-db'
+        pathname === '/api/test-db' ||
+        pathname === '/api/input-support-assist'
     ) {
         return NextResponse.next()
     }
