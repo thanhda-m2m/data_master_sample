@@ -44,6 +44,21 @@ export class InputSupportOrchestrator {
         phase: 'phase_1' | 'phase_2';
     }> {
         try {
+            // Initial greeting — no agent processing
+            if (chatHistory.length === 0) {
+                const phase = PhaseDetector.determine(fieldData);
+                return {
+                    message: "Hi! I'm here to help you fill out this form. What would you like to start with?",
+                    parsed: {
+                        userMessage: "Hi! I'm here to help you fill out this form. What would you like to start with?",
+                        phase,
+                        jsonData: {},
+                        evaluation: null
+                    },
+                    phase
+                };
+            }
+
             const phase = PhaseDetector.determine(fieldData);
 
             const userMessage = chatHistory.length > 0
@@ -87,7 +102,7 @@ export class InputSupportOrchestrator {
                 }
             ];
 
-            const systemPrompt = buildOrchestratorPrompt(phase, fieldData);
+            const systemPrompt = buildOrchestratorPrompt(phase, fieldData, chatHistory);
 
             const response = await this.openai.chat.completions.create({
                 model: 'claude-sonnet-4-6',

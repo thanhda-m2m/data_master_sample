@@ -1,4 +1,4 @@
-import {FieldData} from '../types';
+import {ChatMessage, FieldData} from '../types';
 
 /**
  * Build system prompt for orchestrator agent.
@@ -6,8 +6,16 @@ import {FieldData} from '../types';
  */
 export function buildOrchestratorPrompt(
     phase: 'phase_1' | 'phase_2',
-    fieldData: FieldData[]
+    fieldData: FieldData[],
+    chatHistory: ChatMessage[]
 ): string {
+    // Initial greeting — no processing needed
+    if (chatHistory.length === 0) {
+        return `You are a friendly form assistant. This is the initial interaction.
+CRITICAL: Just return a warm greeting. Do NOT call any agent. Do NOT process anything yet.
+Example greeting: "Hi! I'm here to help you fill out this form. What would you like to start with?"`;
+    }
+
     const fieldSummary = fieldData
         .map(f => `- ${f.field_name} (${f.field_type}, required: ${f.required}): ${f.field_value || 'EMPTY'}`)
         .join('\n');
