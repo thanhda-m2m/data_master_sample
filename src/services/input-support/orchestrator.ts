@@ -52,8 +52,7 @@ export class InputSupportOrchestrator {
                     parsed: {
                         userMessage: "Hi! I'm here to help you fill out this form. What would you like to start with?",
                         phase,
-                        jsonData: {},
-                        evaluation: null
+                        jsonData: {}
                     },
                     phase
                 };
