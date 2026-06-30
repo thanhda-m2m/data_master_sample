@@ -1,5 +1,5 @@
 import {NextRequest} from 'next/server';
-import {DoneEvent, ErrorEvent, InputSupportRequestSchema, TokenEvent} from '@/services/input-support/types';
+import {ErrorEvent, InputSupportRequestSchema} from '@/services/input-support/types';
 import {InputSupportOrchestrator} from '@/services/input-support/orchestrator';
 
 export const runtime = 'nodejs';
