@@ -37,7 +37,9 @@ Authenticated users land on a path-based tenant dashboard:
 https://data-master.example.com/{tenantCode}
 ```
 
-When a user opens `/{tenantCode}` without a session, or with a session for another tenant, DataMaster immediately starts SSO for that tenant and returns to the same tenant path after login.
+When a user opens `/{tenantCode}` without a matching session, DataMaster shows a tenant-specific sign-in page. The sign-in button starts SSO for that tenant and returns to the same tenant path after login.
+
+Signing out from a tenant dashboard clears the session and returns to `/{tenantCode}`, where the tenant greeting sign-in page is shown.
 
 `/dashboard` is kept as a compatibility entry point and redirects to the signed-in user's tenant path.
 

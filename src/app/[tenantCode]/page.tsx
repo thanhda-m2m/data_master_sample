@@ -2,6 +2,7 @@ import {SsoButton} from '@/components/sso-buttons'
 import {getSession} from '@/lib/auth'
 import {redirect} from 'next/navigation'
 import {SignOutButton} from '../dashboard/signout-button'
+import {Greeting} from './geeting'
 
 const TENANT_CODE_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
 
@@ -17,12 +18,7 @@ export default async function TenantDashboardPage({params}: TenantDashboardPageP
     }
 
     if (!session || tenantCode !== session.tenant) {
-        const callbackUrl = `/${encodeURIComponent(tenantCode)}`
-        const searchParams = new URLSearchParams({
-            tenant: tenantCode,
-            callbackUrl,
-        })
-        redirect(`/api/auth/signin?${searchParams.toString()}`)
+        return <Greeting tenantCode={tenantCode}/>
     }
 
     return (
@@ -93,7 +89,7 @@ export default async function TenantDashboardPage({params}: TenantDashboardPageP
                             accessToken={session.accessToken}
                             label="Smart iMATEへ移動"
                         />
-                        <SignOutButton/>
+                        <SignOutButton redirectTo={`/${session.tenant}`}/>
                     </div>
                 </div>
 

@@ -128,8 +128,14 @@ export async function proxy(request: NextRequest) {
         return NextResponse.next()
     }
 
+    const isTenantRootPath = Boolean(pathTenant && pathname.split('/').filter(Boolean).length === 1)
+
     // Protected routes - redirect to signin if no session
     if (!isLoggedIn) {
+        if (tenant && isTenantRootPath) {
+            return NextResponse.next()
+        }
+
         if (!tenant) {
             return NextResponse.redirect(new URL('/', request.url))
         }

@@ -1,9 +1,18 @@
 'use client'
 
-export function SignOutButton() {
+type SignOutButtonProps = {
+    redirectTo?: string
+}
+
+export function SignOutButton({redirectTo = '/'}: SignOutButtonProps) {
     async function handleSignOut() {
         await fetch('/api/auth/signout', {method: 'POST'})
-        window.location.href = '/'
+        if (redirectTo === `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+            window.location.reload()
+            return
+        }
+
+        window.location.href = redirectTo
     }
 
     return (
