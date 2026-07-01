@@ -91,7 +91,8 @@ export async function proxy(request: NextRequest) {
         pathname === '/api/oauth/register-provider' ||
         pathname.startsWith('/auth') ||
         pathname === '/api/test-db' ||
-        pathname === '/api/input-support-assist'
+        pathname === '/api/input-support-assist' ||
+        pathname === '/api/v1/input-support/input-support-assist'
     ) {
         return NextResponse.next()
     }
