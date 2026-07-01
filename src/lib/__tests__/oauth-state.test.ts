@@ -135,6 +135,7 @@ describe('oauth-state', () => {
         expect(normalizeOAuthCallbackUrl('/issued/path?x=1', 'https://datamaster.example.com')).toBe('/issued/path?x=1')
         expect(normalizeOAuthCallbackUrl('https://datamaster.example.com/issued/path#done', 'https://datamaster.example.com')).toBe('/issued/path#done')
         expect(normalizeOAuthCallbackUrl(null, 'https://datamaster.example.com')).toBe('/dashboard')
+        expect(normalizeOAuthCallbackUrl(null, 'https://datamaster.example.com', '/takdemo')).toBe('/takdemo')
     })
 
     it('rejects unsafe post-login redirect URLs', () => {

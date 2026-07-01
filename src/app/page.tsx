@@ -10,7 +10,7 @@ export default async function Home() {
     const session = await getSession()
 
     if (session) {
-        redirect('/dashboard')
+        redirect(`/${encodeURIComponent(session.tenant)}`)
     }
 
     const requestHeaders = await headers()

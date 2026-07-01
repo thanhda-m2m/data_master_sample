@@ -23,8 +23,12 @@ export type OAuthCallbackState = {
     isValid: boolean
 }
 
-export function normalizeOAuthCallbackUrl(value: string | null, requestOrigin: string): string | null {
-    const candidate = value || '/dashboard'
+export function normalizeOAuthCallbackUrl(
+    value: string | null,
+    requestOrigin: string,
+    fallbackPath = '/dashboard'
+): string | null {
+    const candidate = value || fallbackPath
     if (candidate.startsWith('//')) {
         return null
     }

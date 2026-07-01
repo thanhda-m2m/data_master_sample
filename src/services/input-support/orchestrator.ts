@@ -113,11 +113,6 @@ export class InputSupportOrchestrator {
                 tool_choice: 'required'
             });
 
-            console.log('[DEBUG] Response:', JSON.stringify({
-                choice: response.choices[0]?.message,
-                tool_calls: response.choices[0]?.message?.tool_calls
-            }, null, 2));
-
             const toolCall = response.choices[0]?.message?.tool_calls?.[0];
             if (!toolCall || toolCall.type !== 'function') {
                 console.error('[DEBUG] No tool call. Full response:', JSON.stringify(response, null, 2));

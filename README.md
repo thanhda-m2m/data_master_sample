@@ -29,6 +29,16 @@ Browser login redirects use `SMARTIMATE_BASE_URL`. DataMaster backend token exch
 
 `SMARTIMATE_TOKEN_URL` and `SMARTIMATE_VALIDATE_URL` can still override individual backend endpoints. If the internal base is unset, backend calls fall back to the public base.
 
+## Tenant Dashboard Routes
+
+Authenticated users land on a path-based tenant dashboard:
+
+```text
+https://data-master.example.com/{tenantCode}
+```
+
+`/dashboard` is kept as a compatibility entry point and redirects to the signed-in user's tenant path.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

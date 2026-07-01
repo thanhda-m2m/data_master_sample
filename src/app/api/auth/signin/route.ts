@@ -27,10 +27,6 @@ export async function GET(request: NextRequest) {
     const queryTenant = searchParams.get('tenant')
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
-    const callbackUrl = normalizeOAuthCallbackUrl(
-        searchParams.get('redirect_url') || searchParams.get('callbackUrl'),
-        requestOrigin
-    )
 
     // Priority: subdomain > submitted selection > cookie fallback.
     const {tenantCode: tenant} = resolveSigninTenant(
@@ -47,6 +43,12 @@ export async function GET(request: NextRequest) {
     if (!/^[a-zA-Z0-9_-]{1,50}$/.test(tenant)) {
         return Response.json({error: 'Invalid tenant format'}, {status: 400})
     }
+
+    const callbackUrl = normalizeOAuthCallbackUrl(
+        searchParams.get('redirect_url') || searchParams.get('callbackUrl'),
+        requestOrigin,
+        `/${tenant}`
+    )
 
     // Validate callback URL (prevent open redirect)
     if (!callbackUrl) {
