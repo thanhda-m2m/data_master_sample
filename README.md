@@ -37,6 +37,8 @@ Authenticated users land on a path-based tenant dashboard:
 https://data-master.example.com/{tenantCode}
 ```
 
+When a user opens `/{tenantCode}` without a session, or with a session for another tenant, DataMaster immediately starts SSO for that tenant and returns to the same tenant path after login.
+
 `/dashboard` is kept as a compatibility entry point and redirects to the signed-in user's tenant path.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

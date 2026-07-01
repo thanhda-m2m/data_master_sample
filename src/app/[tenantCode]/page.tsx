@@ -12,12 +12,17 @@ type TenantDashboardPageProps = {
 export default async function TenantDashboardPage({params}: TenantDashboardPageProps) {
     const [{tenantCode}, session] = await Promise.all([params, getSession()])
 
-    if (!session) {
+    if (!TENANT_CODE_FORMAT.test(tenantCode)) {
         redirect('/')
     }
 
-    if (!TENANT_CODE_FORMAT.test(tenantCode) || tenantCode !== session.tenant) {
-        redirect(`/${encodeURIComponent(session.tenant)}`)
+    if (!session || tenantCode !== session.tenant) {
+        const callbackUrl = `/${encodeURIComponent(tenantCode)}`
+        const searchParams = new URLSearchParams({
+            tenant: tenantCode,
+            callbackUrl,
+        })
+        redirect(`/api/auth/signin?${searchParams.toString()}`)
     }
 
     return (

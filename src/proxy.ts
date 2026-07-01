@@ -13,6 +13,22 @@ interface TenantAllowlistCache {
 
 let tenantAllowlistCache: TenantAllowlistCache | null = null
 const ALLOWLIST_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const TENANT_PATH_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
+const RESERVED_PATH_SEGMENTS = new Set(['api', 'auth', 'dashboard', '_next', 'favicon.ico'])
+
+function extractPathTenant(pathname: string): string | null {
+    const firstSegment = pathname.split('/').filter(Boolean)[0]
+    if (!firstSegment || RESERVED_PATH_SEGMENTS.has(firstSegment)) {
+        return null
+    }
+
+    try {
+        const tenantCode = decodeURIComponent(firstSegment)
+        return TENANT_PATH_FORMAT.test(tenantCode) ? tenantCode : null
+    } catch {
+        return null
+    }
+}
 
 /**
  * Build tenant allowlist from database with 5-min TTL cache.
@@ -46,9 +62,19 @@ export async function proxy(request: NextRequest) {
         return NextResponse.next()
     }
 
-    // Detect tenant from subdomain or cookie
+    // Detect tenant from subdomain, path, or cookie.
+    // Priority: subdomain > path segment > cookie fallback.
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
-    const {tenantCode, source} = detectTenant(hostname, cookieTenant)
+    const hostTenant = detectTenant(hostname)
+    const pathTenant = extractPathTenant(pathname)
+    const tenantCode = hostTenant.tenantCode || pathTenant || cookieTenant
+    const source = hostTenant.tenantCode
+        ? hostTenant.source
+        : pathTenant
+            ? 'path'
+            : cookieTenant
+                ? 'cookie'
+                : 'none'
 
     // Validate tenant against allowlist
     let tenant = ''
