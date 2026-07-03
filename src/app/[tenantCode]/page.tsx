@@ -8,13 +8,18 @@ const TENANT_CODE_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
 
 type TenantDashboardPageProps = {
     params: Promise<{ tenantCode: string }>
+    searchParams: Promise<{ logout?: string }>
 }
 
-export default async function TenantDashboardPage({params}: TenantDashboardPageProps) {
-    const [{tenantCode}, session] = await Promise.all([params, getSession()])
+export default async function TenantDashboardPage({params, searchParams}: TenantDashboardPageProps) {
+    const [{tenantCode}, session, {logout}] = await Promise.all([params, getSession(), searchParams])
 
     if (!TENANT_CODE_FORMAT.test(tenantCode)) {
         redirect('/')
+    }
+
+    if (logout === 'true') {
+        return <Greeting tenantCode={tenantCode}/>
     }
 
     if (!session || tenantCode !== session.tenant) {

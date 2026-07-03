@@ -7,12 +7,9 @@ type SignOutButtonProps = {
 export function SignOutButton({redirectTo = '/'}: SignOutButtonProps) {
     async function handleSignOut() {
         await fetch('/api/auth/signout', {method: 'POST'})
-        if (redirectTo === `${window.location.pathname}${window.location.search}${window.location.hash}`) {
-            window.location.reload()
-            return
-        }
-
-        window.location.href = redirectTo
+        const url = new URL(redirectTo, window.location.origin)
+        url.searchParams.set('logout', 'true')
+        window.location.href = url.toString()
     }
 
     return (
