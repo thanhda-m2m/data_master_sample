@@ -18,7 +18,7 @@ export default async function TenantDashboardPage({params}: TenantDashboardPageP
     }
 
     if (!session || tenantCode !== session.tenant) {
-        return <Greeting tenantCode={tenantCode}/>
+        redirect(`/api/auth/signin?tenant=${tenantCode}&callbackUrl=/${tenantCode}`)
     }
 
     return (
