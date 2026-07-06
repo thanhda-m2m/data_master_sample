@@ -66,7 +66,7 @@ export async function proxy(request: NextRequest) {
     // Priority: subdomain > path segment > cookie fallback.
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const hostTenant = detectTenant(hostname)
-    const pathTenant = extractPathTenant(pathname)
+    const pathTenant = extractPathTenant(pathname)?.toLowerCase();
     const tenantCode = hostTenant.tenantCode || pathTenant || cookieTenant
     const source = hostTenant.tenantCode
         ? hostTenant.source
