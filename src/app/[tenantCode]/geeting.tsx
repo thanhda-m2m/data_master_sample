@@ -25,8 +25,8 @@ export const Greeting = ({tenantCode}: GreetingProps) => {
                 </div>
 
                 <form action="/api/auth/signin" method="get" className="space-y-3">
-                    <input type="hidden" name="tenant" value={tenantCode}/>
-                    <input type="hidden" name="callbackUrl" value={`/${tenantCode}`}/>
+                    <input type="hidden" name="tenant" value={tenantCode.toLowerCase()}/>
+                    <input type="hidden" name="callbackUrl" value={`/${tenantCode.toLowerCase()}`}/>
 
                     <button
                         type="submit"
