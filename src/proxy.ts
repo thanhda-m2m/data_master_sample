@@ -79,6 +79,7 @@ export async function proxy(request: NextRequest) {
     // Validate tenant against allowlist
     let tenant = ''
     if (tenantCode) {
+        console.log("current tenant code", tenantCode);
         const allowlist = await getTenantAllowlist()
         console.log("current allow list", allowlist);
         if (allowlist.has(tenantCode)) {
