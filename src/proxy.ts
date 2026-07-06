@@ -42,7 +42,7 @@ async function getTenantAllowlist(): Promise<Set<string>> {
 
     // Query database for all tenants
     const tenants = await listTenantsFromDb()
-    const allowlist = new Set(tenants.map((t) => t.loginid))
+    const allowlist = new Set(tenants.map((t) => t.loginid.toLowerCase()))
 
     // Cache result with TTL
     tenantAllowlistCache = {
