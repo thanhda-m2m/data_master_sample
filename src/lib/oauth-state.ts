@@ -28,7 +28,7 @@ export function normalizeOAuthCallbackUrl(
     requestOrigin: string,
     fallbackPath = '/dashboard'
 ): string | null {
-    const candidate = value || fallbackPath
+    const candidate = value?.toLowerCase() || fallbackPath
     if (candidate.startsWith('//')) {
         return null
     }
