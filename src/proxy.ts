@@ -80,6 +80,7 @@ export async function proxy(request: NextRequest) {
     let tenant = ''
     if (tenantCode) {
         const allowlist = await getTenantAllowlist()
+        console.log("current allow list", allowlist);
         if (allowlist.has(tenantCode)) {
             tenant = tenantCode
         } else {
