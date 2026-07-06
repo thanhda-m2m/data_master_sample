@@ -23,7 +23,7 @@ export default async function TenantDashboardPage({params, searchParams}: Tenant
     }
 
     if (!session || tenantCode !== session.tenant) {
-        redirect(`/api/auth/signin?tenant=${tenantCode}&callbackUrl=/${tenantCode}`)
+        redirect(`/api/auth/signin?tenant=${tenantCode.toLowerCase()}&callbackUrl=/${tenantCode}`)
     }
 
     return (
