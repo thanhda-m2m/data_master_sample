@@ -4,7 +4,6 @@ import {resolveTenantConfig} from '@/lib/env-config'
 import {SignJWT} from 'jose'
 import {cookies} from 'next/headers'
 import {logAuditEvent} from '@/lib/audit-log'
-import {detectTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
 import {readSignedOAuthState, resolveOAuthCallbackState} from '@/lib/oauth-state'
@@ -113,11 +112,6 @@ export async function GET(request: NextRequest) {
     const providerErrorDescription = searchParams.get('error_description')
     const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
 
-    // Detect tenant from subdomain first
-    const {tenantCode: subdomainTenant} = detectTenant(
-        request.headers.get('host') || ''
-    )
-
     const cookieStore = await cookies()
     const signedState = await readSignedOAuthState(oauthSession)
     const {
@@ -132,14 +126,8 @@ export async function GET(request: NextRequest) {
         name => cookieStore.get(name)?.value
     )
 
-    // Priority: subdomain > OAuth session JWT > cookie
-    const tenant = subdomainTenant || stateTenant || cookieTenant
-
-    // Validate tenant consistency
-    if (subdomainTenant && stateTenant && subdomainTenant !== stateTenant) {
-        logAuditEvent('validation_failure', tenant || 'unknown', request.headers, {error: 'tenant_mismatch_subdomain'})
-        return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
-    }
+    // Priority: OAuth session JWT > cookie (path-based only)
+    const tenant = stateTenant || cookieTenant
 
     if (providerError) {
         const errorUrlObj = new URL('/auth/error', requestOrigin)

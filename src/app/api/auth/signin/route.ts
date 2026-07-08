@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
     const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
 
-    // Priority: subdomain > submitted selection > cookie fallback.
+    // Priority: query > cookie fallback (path-based only).
     const {tenantCode: tenant} = resolveSigninTenant(
         request.headers.get('host') || '',
         queryTenant,
