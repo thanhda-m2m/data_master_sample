@@ -125,19 +125,13 @@ export function detectTenant(
 
 /**
  * Resolve tenant for an explicit sign-in request.
- * A subdomain-bound sign-in must not be overridden by query or stale cookie state.
- * Priority: subdomain > query > cookie > none.
+ * Priority: query > cookie > none.
  */
 export function resolveSigninTenant(
     hostname: string,
     queryTenant?: string | null,
     cookieTenant?: string
-): { tenantCode: string | null; source: 'subdomain' | 'query' | 'cookie' | 'none' } {
-    const subdomainTenant = extractSubdomainTenant(hostname)
-    if (subdomainTenant) {
-        return {tenantCode: subdomainTenant, source: 'subdomain'}
-    }
-
+): { tenantCode: string | null; source: 'query' | 'cookie' | 'none' } {
     if (queryTenant) {
         return {tenantCode: queryTenant, source: 'query'}
     }
