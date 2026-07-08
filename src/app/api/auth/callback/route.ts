@@ -254,7 +254,7 @@ export async function GET(request: NextRequest) {
             payload.email ||
             'Unknown User'
 
-        // Keep the browser session cookie small. Raw Cognito tokens can exceed cookie limits.
+        // Keep refresh/id tokens out of the cookie; access token is needed for userinfo revalidation.
         const secret = new TextEncoder().encode(process.env.AUTH_SECRET)
         const sessionToken = await new SignJWT({
             sub: payload.sub,
@@ -262,6 +262,7 @@ export async function GET(request: NextRequest) {
             name: userName,
             phonenumber: payload.phonenumber,
             tenant,
+            accessToken: tokens.access_token,
             expiresAt: Math.floor(Date.now() / 1000) + Number(tokens.expires_in || 3600) - 60,
         })
             .setProtectedHeader({alg: 'HS256'})

@@ -43,6 +43,12 @@ Signing out from a tenant dashboard clears the session and returns to `/{tenantC
 
 `/dashboard` is kept as a compatibility entry point and redirects to the signed-in user's tenant path.
 
+## Smart iMATE Session Revalidation
+
+Smart iMATE can link to `/{tenantCode}?rs=1` when opening DataMaster.
+
+When `rs=1` is present, DataMaster calls Smart iMATE `/{tenantCode}/oauth2/userinfo` with the current local session access token. A missing, invalid, or different session restarts Smart iMATE SSO and returns to `/{tenantCode}`. A matching session continues to the tenant dashboard.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

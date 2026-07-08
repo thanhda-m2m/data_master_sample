@@ -1,5 +1,12 @@
 import {SsoButton} from '@/components/sso-buttons'
 import {getSession} from '@/lib/auth'
+import {resolveTenantConfig} from '@/lib/env-config'
+import {
+    doesSessionMatchTenant,
+    isSessionRevalidationRequested,
+    revalidateSessionViaSmartiMateUserInfo,
+} from '@/lib/session-revalidation'
+import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
 import {redirect} from 'next/navigation'
 import {SignOutButton} from '../dashboard/signout-button'
 import {Greeting} from './geeting'
@@ -8,11 +15,15 @@ const TENANT_CODE_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
 
 type TenantDashboardPageProps = {
     params: Promise<{ tenantCode: string }>
-    searchParams: Promise<{ logout?: string }>
+    searchParams: Promise<{
+        logout?: string
+        rs?: string
+    }>
 }
 
 export default async function TenantDashboardPage({params, searchParams}: TenantDashboardPageProps) {
-    const [{tenantCode}, session, {logout}] = await Promise.all([params, getSession(), searchParams])
+    const [{tenantCode}, session, query] = await Promise.all([params, getSession(), searchParams])
+    const {logout, rs} = query
 
     if (!TENANT_CODE_FORMAT.test(tenantCode)) {
         redirect('/')
@@ -22,8 +33,24 @@ export default async function TenantDashboardPage({params, searchParams}: Tenant
         return <Greeting tenantCode={tenantCode}/>
     }
 
-    if (!session || tenantCode !== session.tenant) {
-        redirect(`/api/auth/signin?tenant=${tenantCode.toLowerCase()}&callbackUrl=/${tenantCode}`)
+    const signinUrl = `/api/auth/signin?${new URLSearchParams({
+        tenant: tenantCode.toLowerCase(),
+        callbackUrl: `/${tenantCode}`,
+    }).toString()}`
+
+    if (isSessionRevalidationRequested(rs)) {
+        const config = await resolveTenantConfigFromDb(tenantCode) ?? await resolveTenantConfig(tenantCode)
+        const isRevalidated = config && await revalidateSessionViaSmartiMateUserInfo(session, {
+            tenant: tenantCode,
+            smartimateTokenUrl: config.smartimateTokenUrl,
+        })
+        if (!isRevalidated) {
+            redirect(signinUrl)
+        }
+    }
+
+    if (!session || !doesSessionMatchTenant(session, tenantCode)) {
+        redirect(signinUrl)
     }
 
     return (
