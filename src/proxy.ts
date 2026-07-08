@@ -1,7 +1,6 @@
 import type {NextRequest} from 'next/server'
 import {NextResponse} from 'next/server'
 import {jwtVerify} from 'jose'
-import {detectTenant} from './lib/tenant-detection'
 import {listTenantsFromDb} from './lib/tenant-resolver'
 import {runWithTenant} from './lib/tenant-context'
 
@@ -62,19 +61,12 @@ export async function proxy(request: NextRequest) {
         return NextResponse.next()
     }
 
-    // Detect tenant from subdomain, path, or cookie.
-    // Priority: subdomain > path segment > cookie fallback.
+    // Detect tenant from path or cookie fallback.
+    // Priority: path segment > cookie fallback.
     const cookieTenant = request.cookies.get('datamaster_tenant')?.value
-    const hostTenant = detectTenant(hostname)
-    const pathTenant = extractPathTenant(pathname)?.toLowerCase();
-    const tenantCode = hostTenant.tenantCode || pathTenant || cookieTenant
-    const source = hostTenant.tenantCode
-        ? hostTenant.source
-        : pathTenant
-            ? 'path'
-            : cookieTenant
-                ? 'cookie'
-                : 'none'
+    const pathTenant = extractPathTenant(pathname)?.toLowerCase()
+    const tenantCode = pathTenant || cookieTenant
+    const source = pathTenant ? 'path' : cookieTenant ? 'cookie' : 'none'
 
     // Validate tenant against allowlist
     let tenant = ''
