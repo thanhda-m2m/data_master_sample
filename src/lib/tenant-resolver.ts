@@ -277,7 +277,7 @@ export async function listTenantsFromDb(): Promise<TenantSummary[]> {
             FROM buscomps bc
                      INNER JOIN bkmasters bk ON bc.bkid = bk.bkid
             WHERE bc.loginid IS NOT NULL
-              AND bk.cognito_credentials IS NOT NULL
+--               AND bk.cognito_credentials IS NOT NULL
             ORDER BY bc.loginid ASC
         `
 
