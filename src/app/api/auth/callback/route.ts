@@ -10,13 +10,15 @@ import {readSignedOAuthState, resolveOAuthCallbackState} from '@/lib/oauth-state
 
 type CognitoUserPayload = {
     sub?: string
+    staff_id?: string
     email?: string
     name?: string
     preferred_username?: string
     given_name?: string
     family_name?: string
     tenant_id?: string
-    phonenumber?: string
+    token_source?: 'cognito' | 'smartimate_impersonation'
+    phoneNumber?: string
 }
 
 type TokenExchangeResponse = {
@@ -26,47 +28,7 @@ type TokenExchangeResponse = {
     token_type?: string
     expires_in?: number
     scope?: string
-    token_source?: string
-}
-
-async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
-    const endpoint =
-        process['env']['AWS' + '_ENDPOINT_URL'] ||
-        `https://cognito-idp.${region}.amazonaws.com/`;
-
-    const response = await fetch(endpoint.endsWith('/') ? endpoint : `${endpoint}/`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-amz-json-1.1',
-            'X-Amz-Target': 'AWSCognitoIdentityProviderService.GetUser',
-        },
-        body: JSON.stringify({AccessToken: accessToken}),
-    });
-
-    if (!response.ok) {
-        throw new Error(await response.text())
-    }
-
-    const result = await response.json() as {
-        Username?: string
-        UserAttributes?: Array<{ Name?: string; Value?: string }>
-    }
-    const attributes = Object.fromEntries(
-        (result.UserAttributes || [])
-            .filter(attribute => attribute.Name)
-            .map(attribute => [attribute.Name as string, attribute.Value || ''])
-    )
-
-    return {
-        sub: attributes.sub || result.Username,
-        email: attributes.email || '',
-        name: attributes.name || '',
-        preferred_username: attributes.preferred_username || result.Username || '',
-        given_name: attributes.given_name || '',
-        family_name: attributes.family_name || '',
-        tenant_id: attributes['custom:tenant_id'] || attributes.tenant_id || '',
-        phonenumber: attributes.phone_number || '',
-    }
+        token_source?: string
 }
 
 function smartiMateUserInfoUrlFromTokenUrl(tokenUrl: string, tenant: string) {
@@ -91,16 +53,20 @@ async function fetchSmartiMateUserInfo(accessToken: string, tokenUrl: string, te
         email?: string
         name?: string
         tenant_id?: string
+        staff_id?: string
+        token_source?: 'cognito' | 'smartimate_impersonation'
         phone_number?: string
         phonenumber?: string
     }
 
     return {
         sub: result.sub,
+        staff_id: result.staff_id,
         email: result.email,
         name: result.name,
         tenant_id: result.tenant_id,
-        phonenumber: result.phonenumber || result.phone_number,
+        token_source: result.token_source,
+        phoneNumber: result.phonenumber || result.phone_number,
     }
 }
 
@@ -214,36 +180,29 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }
 
+        if (tokens.token_source !== 'cognito' && tokens.token_source !== 'smartimate_impersonation') {
+            console.error('Unknown token source:', {tenant, tokenSource: tokens.token_source})
+            return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
+        }
+
         let payload: CognitoUserPayload
         try {
-            if (tokens.token_source === 'smartimate_impersonation') {
-                payload = await fetchSmartiMateUserInfo(tokens.access_token, config.smartimateTokenUrl, tenant)
-            } else {
-                // Decode token to find actual issuer (Smart iMATE's Cognito pool)
-                const tokenParts = tokens.access_token.split('.')
-                let actualRegion = config.region
-
-                if (tokenParts.length >= 2) {
-                    const tokenPayload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
-
-                    // Extract region and pool from issuer
-                    // Format: https://cognito-idp.{region}.amazonaws.com/{poolId}
-                    const issuerMatch = tokenPayload.iss?.match(/cognito-idp\.([^.]+)\.amazonaws\.com\/([^/]+)/)
-                    if (issuerMatch) {
-                        const [, tokenRegion] = issuerMatch
-                        actualRegion = tokenRegion
-                    }
-                }
-
-                // Call GetUser directly with token's pool
-                payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
-            }
+            payload = await fetchSmartiMateUserInfo(tokens.access_token, config.smartimateTokenUrl, tenant)
         } catch (error) {
             console.error('UserInfo failed:', {
                 tenant,
                 tokenSource: tokens.token_source || 'cognito',
                 error: error instanceof Error ? error.message : String(error)
             })
+            return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
+        }
+
+        if (!payload.tenant_id || payload.tenant_id.toLowerCase() !== tenant.toLowerCase()) {
+            logAuditEvent('validation_failure', tenant, request.headers, {error: 'tenant_mismatch'})
+            return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
+        }
+        if (payload.token_source !== tokens.token_source || !payload.sub || !payload.staff_id || !payload.email) {
+            logAuditEvent('validation_failure', tenant, request.headers, {error: 'identity_mismatch'})
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }
 
@@ -260,9 +219,10 @@ export async function GET(request: NextRequest) {
             sub: payload.sub,
             email: payload.email,
             name: userName,
-            phonenumber: payload.phonenumber,
+            phonenumber: payload.phoneNumber,
             tenant,
             accessToken: tokens.access_token,
+            tokenSource: tokens.token_source,
             expiresAt: Math.floor(Date.now() / 1000) + Number(tokens.expires_in || 3600) - 60,
         })
             .setProtectedHeader({alg: 'HS256'})

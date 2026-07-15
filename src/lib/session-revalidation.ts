@@ -14,9 +14,11 @@ export type SessionRevalidationRequest = {
 
 export type SmartiMateUserInfo = {
     sub?: string
+    staff_id?: string
     email?: string
     tenant_id?: string
     tenant?: string
+    token_source?: 'cognito' | 'smartimate_impersonation'
 }
 
 type Fetcher = typeof fetch
@@ -99,23 +101,23 @@ export function doesUserInfoMatchSession(
     request: SessionRevalidationRequest
 ) {
     const userInfoTenant = normalizeIdentity(userInfo.tenant_id || userInfo.tenant)
-    if (userInfoTenant && userInfoTenant !== normalizeIdentity(request.tenant)) {
+    if (!userInfoTenant || userInfoTenant !== normalizeIdentity(request.tenant)) {
         return false
     }
 
     const sessionEmail = normalizeIdentity(session.user?.email)
     const userInfoEmail = normalizeIdentity(userInfo.email)
-    if (sessionEmail && userInfoEmail && sessionEmail !== userInfoEmail) {
+    if (!sessionEmail || !userInfoEmail || sessionEmail !== userInfoEmail) {
         return false
     }
 
     const sessionUserId = normalizeIdentity(session.user?.id)
-    const userInfoSub = normalizeIdentity(userInfo.sub)
-    if (!userInfoEmail && sessionUserId && userInfoSub && sessionUserId !== userInfoSub) {
+    const userInfoSub = normalizeIdentity(userInfo.sub || userInfo.staff_id)
+    if (!sessionUserId || !userInfoSub || sessionUserId !== userInfoSub) {
         return false
     }
 
-    return Boolean(userInfoEmail || userInfoSub)
+    return userInfo.token_source === 'cognito' || userInfo.token_source === 'smartimate_impersonation'
 }
 
 export async function revalidateSessionViaSmartiMateUserInfo(

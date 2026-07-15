@@ -118,7 +118,6 @@ export default async function TenantDashboardPage({params, searchParams}: Tenant
                         <SsoButton
                             target="smartimate"
                             tenant={session.tenant}
-                            accessToken={session.accessToken}
                             label="Smart iMATEへ移動"
                         />
                         <SignOutButton redirectTo={`/${session.tenant}`}/>
