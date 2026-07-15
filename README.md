@@ -29,6 +29,16 @@ Browser login redirects use `SMARTIMATE_BASE_URL`. DataMaster backend token exch
 
 `SMARTIMATE_TOKEN_URL` and `SMARTIMATE_VALIDATE_URL` can still override individual backend endpoints. If the internal base is unset, backend calls fall back to the public base.
 
+## Cloud and Isolated SSO
+
+DataMaster uses the tenant row to select the broker contract; it does not mirror Smart iMATE's `IS_ISOLATED_ENV` flag.
+
+- Cloud tenants with Cognito credentials keep their configured DataMaster client and receive `token_source=cognito`.
+- Isolated tenants with no Cognito credentials and no user pool use the public client `datamaster-{tenantCode}` with no secret and receive `token_source=smartimate_local`.
+- Admin impersonation continues to use `token_source=smartimate_impersonation`.
+
+All modes use the same signed OAuth state, PKCE S256, exact callback allowlist, backend code exchange, and Smart iMATE tenant UserInfo validation. Missing or mismatched tenant, identity, or token source fails closed.
+
 ## Tenant Dashboard Routes
 
 Authenticated users land on a path-based tenant dashboard:
@@ -47,7 +57,7 @@ Signing out from a tenant dashboard clears the session and returns to `/{tenantC
 
 Smart iMATE can link to `/{tenantCode}?rs=1` when opening DataMaster.
 
-When `rs=1` is present, DataMaster calls Smart iMATE `/{tenantCode}/oauth2/userinfo` with the current local session access token. A missing, invalid, or different session restarts Smart iMATE SSO and returns to `/{tenantCode}`. A matching session continues to the tenant dashboard.
+When `rs=1` is present, DataMaster calls Smart iMATE `/{tenantCode}/oauth2/userinfo` with the current session access token. A missing, invalid, source-mismatched, or different session restarts Smart iMATE SSO and returns to `/{tenantCode}`. A matching session continues to the tenant dashboard.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

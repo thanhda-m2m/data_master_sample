@@ -1,6 +1,10 @@
+import {isSmartiMateTokenSource} from './auth-token-source'
+import type {SmartiMateTokenSource} from './auth-token-source'
+
 export type RevalidationSession = {
     tenant?: string
     accessToken?: string
+    tokenSource?: SmartiMateTokenSource
     user?: {
         id?: string
         email?: string
@@ -18,7 +22,7 @@ export type SmartiMateUserInfo = {
     email?: string
     tenant_id?: string
     tenant?: string
-    token_source?: 'cognito' | 'smartimate_impersonation'
+    token_source?: SmartiMateTokenSource
 }
 
 type Fetcher = typeof fetch
@@ -117,7 +121,8 @@ export function doesUserInfoMatchSession(
         return false
     }
 
-    return userInfo.token_source === 'cognito' || userInfo.token_source === 'smartimate_impersonation'
+    return isSmartiMateTokenSource(userInfo.token_source)
+        && session.tokenSource === userInfo.token_source
 }
 
 export async function revalidateSessionViaSmartiMateUserInfo(

@@ -23,7 +23,7 @@ describe('session-revalidation', () => {
 
     it('matches current DataMaster session tenant without case sensitivity', () => {
         expect(doesSessionMatchTenant(
-            {tenant: 'takdemo', user: {email: 'user@example.com'}},
+            {tenant: 'takdemo', tokenSource: 'cognito', user: {email: 'user@example.com'}},
             'TAKDEMO'
         )).toBe(true)
     })
@@ -79,6 +79,7 @@ describe('session-revalidation', () => {
         expect(doesUserInfoMatchSession(
             {
                 tenant: 'takdemo',
+                tokenSource: 'cognito',
                 user: {id: 'cognito-user-id', email: 'user@example.com'},
             },
             userInfo as SmartiMateUserInfo,
@@ -98,6 +99,7 @@ describe('session-revalidation', () => {
             {
                 tenant: 'takdemo',
                 accessToken: 'session-token',
+                tokenSource: 'cognito',
                 user: {id: 'cognito-user-id', email: 'user@example.com'},
             },
             {
@@ -106,5 +108,46 @@ describe('session-revalidation', () => {
             },
             fetcher
         )).resolves.toBe(true)
+    })
+
+    it('revalidates an isolated local session through Smart iMATE userinfo', async () => {
+        const fetcher = async () => Response.json({
+            email: 'user@example.com',
+            sub: '42',
+            staff_id: '42',
+            tenant_id: 'isolated',
+            token_source: 'smartimate_local',
+        })
+
+        await expect(revalidateSessionViaSmartiMateUserInfo(
+            {
+                tenant: 'isolated',
+                accessToken: 'local-session-token',
+                tokenSource: 'smartimate_local',
+                user: {id: '42', email: 'user@example.com'},
+            },
+            {
+                tenant: 'isolated',
+                smartimateTokenUrl: 'https://smartimate.example.com/oauth2/token',
+            },
+            fetcher
+        )).resolves.toBe(true)
+    })
+
+    it('rejects a userinfo source that differs from the stored session source', () => {
+        expect(doesUserInfoMatchSession(
+            {
+                tenant: 'takdemo',
+                tokenSource: 'cognito',
+                user: {id: 'cognito-user-id', email: 'user@example.com'},
+            },
+            {
+                sub: 'cognito-user-id',
+                email: 'user@example.com',
+                tenant_id: 'takdemo',
+                token_source: 'smartimate_local',
+            },
+            {tenant: 'takdemo'}
+        )).toBe(false)
     })
 })

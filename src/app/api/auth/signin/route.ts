@@ -77,16 +77,16 @@ export async function GET(request: NextRequest) {
 
         const redirectUri = `${requestOrigin}/api/auth/callback`
 
-        // Smart iMATE login.php is the entry point for authentication
+        // Smart iMATE login.php is the entry point for both authentication modes.
         // Flow:
         // 1. Redirect to Smart iMATE with minimal browser-carried broker params
-        // 2. login.php authenticates user via Cognito USER_PASSWORD_AUTH
-        // 3. login.php stores Cognito tokens in session
+        // 2. login.php uses Cognito in cloud or local staff auth in an isolated tenant
+        // 3. login.php stores the source-tagged broker token in its server session
         // 4. login.php redirects to /oauth2/authorize with same OAuth params
-        // 5. /oauth2/authorize generates auth code JWT, links Cognito tokens from session
+        // 5. /oauth2/authorize generates an auth code JWT and links the broker token
         // 6. /oauth2/authorize redirects back to DataMaster callback with code
         // 7. DataMaster exchanges code at /oauth2/token
-        // 8. /oauth2/token returns Cognito tokens (access_token, id_token, refresh_token)
+        // 8. /oauth2/token returns the source-tagged access token
         const authUrl = buildSmartiMateLoginUrl(smartiMateBaseUrl, tenant)
         authUrl.searchParams.set('redirect_uri', redirectUri)
         authUrl.searchParams.set('session', oauthSession)

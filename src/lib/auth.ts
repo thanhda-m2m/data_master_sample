@@ -2,6 +2,8 @@ import {cookies} from 'next/headers'
 import {unstable_rethrow} from 'next/navigation'
 import {jwtVerify} from 'jose'
 import {resolveTenantConfig} from './env-config'
+import {isSmartiMateTokenSource} from './auth-token-source'
+import type {SmartiMateTokenSource} from './auth-token-source'
 
 export interface Session {
     user: {
@@ -14,6 +16,7 @@ export interface Session {
     accessToken?: string
     refreshToken?: string
     expiresAt?: number
+    tokenSource?: SmartiMateTokenSource
 }
 
 type ValidationCacheEntry = {
@@ -50,6 +53,7 @@ export async function getSession(): Promise<Session | null> {
             accessToken: typeof payload.accessToken === 'string' ? payload.accessToken : undefined,
             refreshToken: typeof payload.refreshToken === 'string' ? payload.refreshToken : undefined,
             expiresAt: typeof payload.expiresAt === 'number' ? payload.expiresAt : undefined,
+            tokenSource: isSmartiMateTokenSource(payload.tokenSource) ? payload.tokenSource : undefined,
         }
     } catch (error) {
         unstable_rethrow(error)

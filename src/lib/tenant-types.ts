@@ -19,6 +19,7 @@ export interface CognitoCredentials {
  * Used by NextAuth.js providers and middleware.
  */
 export interface TenantConfig {
+    authMode: 'cognito' | 'smartimate_local'
     loginId: string // tenant code (buscomps.loginid)
     userPoolId: string // Cognito User Pool ID
     clientId: string // OAuth app client ID (from JSON)

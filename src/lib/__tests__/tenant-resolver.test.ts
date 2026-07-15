@@ -50,6 +50,7 @@ describe('tenant-resolver', () => {
             const config = await resolveTenantConfigFromDb('takdemo')
 
             expect(config).not.toBeNull()
+            expect(config?.authMode).toBe('cognito')
             expect(config?.loginId).toBe('takdemo')
             expect(config?.clientId).toBe('test-client-id')
             expect(config?.clientSecret).toBe('test-client-secret')
@@ -63,6 +64,68 @@ describe('tenant-resolver', () => {
             expect(config?.cognitoUserInfoUrl).toBe(config?.userInfoUrl)
             expect(config?.jwksUri).toContain('/.well-known/jwks.json')
             expect(config?.smartimateTokenUrl).toContain('/oauth2/token')
+        })
+
+        it('accepts mysql JSON objects for cloud tenants', async () => {
+            vi.mocked(db.query).mockResolvedValueOnce([
+                {
+                    bkid: 2,
+                    loginid: 'object-json',
+                    bcname: 'Object JSON Tenant',
+                    cognito_credentials: {
+                        datamaster: {
+                            app_client_id: 'object-client-id',
+                            app_client_secret: 'object-client-secret',
+                        },
+                    },
+                    cognito_region: 'ap-northeast-1',
+                    userPoolId: 'ap-northeast-1_ObjectPool',
+                },
+            ])
+
+            await expect(resolveTenantConfigFromDb('object-json')).resolves.toMatchObject({
+                authMode: 'cognito',
+                clientId: 'object-client-id',
+                clientSecret: 'object-client-secret',
+            })
+        })
+
+        it('derives a public Smart iMATE broker client for isolated tenants', async () => {
+            vi.mocked(db.query).mockResolvedValueOnce([
+                {
+                    bkid: 3,
+                    loginid: 'Isolated_Tenant',
+                    bcname: 'Isolated Tenant',
+                    cognito_credentials: null,
+                    cognito_region: null,
+                    userPoolId: null,
+                },
+            ])
+
+            await expect(resolveTenantConfigFromDb('Isolated_Tenant')).resolves.toMatchObject({
+                authMode: 'smartimate_local',
+                clientId: 'datamaster-isolated_tenant',
+                clientSecret: '',
+                userPoolId: '',
+                region: '',
+                issuer: '',
+                jwksUri: '',
+            })
+        })
+
+        it('rejects partial Cognito configuration instead of treating it as isolated', async () => {
+            vi.mocked(db.query).mockResolvedValueOnce([
+                {
+                    bkid: 4,
+                    loginid: 'partial-cognito',
+                    bcname: 'Partial Cognito Tenant',
+                    cognito_credentials: null,
+                    cognito_region: 'ap-northeast-1',
+                    userPoolId: 'ap-northeast-1_PartialPool',
+                },
+            ])
+
+            await expect(resolveTenantConfigFromDb('partial-cognito')).resolves.toBeNull()
         })
 
         it('routes backend Smart iMATE calls through the private base URL', async () => {

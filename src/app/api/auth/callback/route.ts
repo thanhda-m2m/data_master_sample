@@ -7,6 +7,8 @@ import {logAuditEvent} from '@/lib/audit-log'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
 import {readSignedOAuthState, resolveOAuthCallbackState} from '@/lib/oauth-state'
+import {isSmartiMateTokenSource} from '@/lib/auth-token-source'
+import type {SmartiMateTokenSource} from '@/lib/auth-token-source'
 
 type CognitoUserPayload = {
     sub?: string
@@ -17,7 +19,7 @@ type CognitoUserPayload = {
     given_name?: string
     family_name?: string
     tenant_id?: string
-    token_source?: 'cognito' | 'smartimate_impersonation'
+    token_source?: SmartiMateTokenSource
     phoneNumber?: string
 }
 
@@ -28,7 +30,7 @@ type TokenExchangeResponse = {
     token_type?: string
     expires_in?: number
     scope?: string
-        token_source?: string
+    token_source?: string
 }
 
 function smartiMateUserInfoUrlFromTokenUrl(tokenUrl: string, tenant: string) {
@@ -54,7 +56,7 @@ async function fetchSmartiMateUserInfo(accessToken: string, tokenUrl: string, te
         name?: string
         tenant_id?: string
         staff_id?: string
-        token_source?: 'cognito' | 'smartimate_impersonation'
+        token_source?: SmartiMateTokenSource
         phone_number?: string
         phonenumber?: string
     }
@@ -123,12 +125,9 @@ export async function GET(request: NextRequest) {
         }
 
 
-        // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
-        // login.php authenticates via Cognito USER_PASSWORD_AUTH, stores Cognito tokens in session.
-        // Then login.php redirects to /oauth2/authorize which generates the auth code JWT.
-        // /oauth2/authorize links the Cognito tokens (from session) to the auth code JWT.
-        // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
-        // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
+        // Smart iMATE authenticates through Cognito in cloud or local staff auth when isolated.
+        // Its authorize endpoint binds the source-tagged access token to a short-lived auth code.
+        // This backend exchange validates PKCE and returns that linked token.
         const redirectUri = `${requestOrigin}/api/auth/callback`
 
         const tokenParams = new URLSearchParams({
@@ -172,7 +171,7 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
         }
 
-        // Normal login returns Cognito tokens. Admin impersonation returns a Smart iMATE JWT.
+        // Cloud login returns Cognito tokens. Isolated login and impersonation return Smart iMATE JWTs.
         const tokens = await tokenResponse.json() as TokenExchangeResponse
 
         if (!tokens.access_token) {
@@ -180,7 +179,7 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }
 
-        if (tokens.token_source !== 'cognito' && tokens.token_source !== 'smartimate_impersonation') {
+        if (!isSmartiMateTokenSource(tokens.token_source)) {
             console.error('Unknown token source:', {tenant, tokenSource: tokens.token_source})
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }

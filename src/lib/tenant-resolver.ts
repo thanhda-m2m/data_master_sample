@@ -23,9 +23,9 @@ interface TenantDbRow {
     bkid: number
     loginid: string
     bcname: string
-    cognito_credentials: string | CognitoCredentials // JSON string or parsed object
-    cognito_region: string
-    userPoolId: string
+    cognito_credentials: string | CognitoCredentials | null // JSON string, parsed object, or absent for isolated tenants
+    cognito_region: string | null
+    userPoolId: string | null
 }
 
 function envValue(...names: string[]) {
@@ -113,6 +113,11 @@ function parseCognitoCredentials(data: string | CognitoCredentials): { clientId:
     }
 }
 
+export function isolatedDataMasterBrokerClientId(tenantCode: string) {
+    const normalized = tenantCode.trim().toLowerCase()
+    return /^[a-z0-9_-]{1,50}$/.test(normalized) ? `datamaster-${normalized}` : ''
+}
+
 /**
  * Build OAuth URLs from region and userPoolId.
  */
@@ -168,14 +173,13 @@ function normalizeTenantSummary(row: Omit<TenantSummary, 'loginId' | 'compname'>
  *
  * Query pattern:
  * - JOIN buscomps + bkmasters on bkid
- * - WHERE loginid = ? AND cognito_credentials IS NOT NULL
- * - Parse JSON cognito_credentials
- * - Extract $.datamaster.app_client_id and $.datamaster.app_client_secret
+ * - Cloud tenant: parse Cognito credentials and pool metadata
+ * - Isolated tenant: derive the same tenant-bound public broker client as Smart iMATE
  *
  * Returns null if:
  * - Tenant not found in database
- * - cognito_credentials JSON is malformed
- * - Required keys missing in JSON
+ * - Cloud Cognito configuration is malformed or incomplete
+ * - Tenant has only part of the Cognito configuration
  * - Database query fails
  *
  * Cache: 10-min TTL, max 100 entries with LRU eviction.
@@ -198,7 +202,6 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
             FROM buscomps bc
                      INNER JOIN bkmasters bk ON bc.bkid = bk.bkid
             WHERE bc.loginid = ?
---               AND bk.cognito_credentials IS NOT NULL
             LIMIT 1
         `
 
@@ -211,36 +214,44 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
 
         const row = rows[0]
 
-        // Parse JSON credentials
-        const credentials = parseCognitoCredentials(row.cognito_credentials)
-        if (!credentials) {
-            return null
-        }
+        const hasCognitoCredentials = row.cognito_credentials !== null
+        const hasCognitoPool = Boolean(row.userPoolId)
+        const hasCognitoRegion = Boolean(row.cognito_region)
+        const isIsolatedTenant = !hasCognitoCredentials && !hasCognitoPool
 
-        // Validate required fields
-        if (!row.cognito_region || !row.userPoolId) {
-            console.error('Missing required tenant fields', {
+        if (!isIsolatedTenant && (!hasCognitoCredentials || !hasCognitoPool || !hasCognitoRegion)) {
+            console.error('Incomplete Cognito tenant configuration', {
                 tenantCode,
-                hasRegion: !!row.cognito_region,
-                hasUserPoolId: !!row.userPoolId,
+                hasCredentials: hasCognitoCredentials,
+                hasRegion: hasCognitoRegion,
+                hasUserPoolId: hasCognitoPool,
             })
             return null
         }
 
-        // Build OAuth URLs
-        const oauthUrls = buildOAuthUrls(row.cognito_region, row.userPoolId)
+        const credentials = isIsolatedTenant
+            ? {clientId: isolatedDataMasterBrokerClientId(row.loginid), clientSecret: ''}
+            : parseCognitoCredentials(row.cognito_credentials as string | CognitoCredentials)
+        if (!credentials?.clientId) {
+            return null
+        }
+
+        const oauthUrls = isIsolatedTenant
+            ? {issuer: '', authorizationUrl: '', tokenUrl: '', userInfoUrl: ''}
+            : buildOAuthUrls(row.cognito_region as string, row.userPoolId as string)
         const smartiMateUrls = buildSmartiMateUrls()
 
         const config: TenantConfig = {
+            authMode: isIsolatedTenant ? 'smartimate_local' : 'cognito',
             loginId: row.loginid,
-            userPoolId: row.userPoolId,
+            userPoolId: row.userPoolId || '',
             clientId: credentials.clientId,
             clientSecret: credentials.clientSecret,
-            region: row.cognito_region,
+            region: row.cognito_region || '',
             cognitoAuthorizeUrl: oauthUrls.authorizationUrl,
             cognitoTokenUrl: oauthUrls.tokenUrl,
             cognitoUserInfoUrl: oauthUrls.userInfoUrl,
-            jwksUri: `${oauthUrls.issuer}/.well-known/jwks.json`,
+            jwksUri: oauthUrls.issuer ? `${oauthUrls.issuer}/.well-known/jwks.json` : '',
             ...smartiMateUrls,
             ...oauthUrls,
         }
@@ -259,12 +270,12 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
 }
 
 /**
- * List all tenants from database with non-null cognito_credentials.
+ * List all cloud and isolated tenants from database.
  * Returns tenant summaries (bkid, loginId, bcname, subdom).
  *
  * Query pattern:
  * - JOIN buscomps + bkmasters on bkid
- * - WHERE loginid IS NOT NULL AND cognito_credentials IS NOT NULL
+ * - WHERE loginid IS NOT NULL
  * - ORDER BY loginid ASC
  */
 export async function listTenantsFromDb(): Promise<TenantSummary[]> {
@@ -277,7 +288,6 @@ export async function listTenantsFromDb(): Promise<TenantSummary[]> {
             FROM buscomps bc
                      INNER JOIN bkmasters bk ON bc.bkid = bk.bkid
             WHERE bc.loginid IS NOT NULL
---               AND bk.cognito_credentials IS NOT NULL
             ORDER BY bc.loginid ASC
         `
 
