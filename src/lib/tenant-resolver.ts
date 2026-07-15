@@ -198,7 +198,7 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
             FROM buscomps bc
                      INNER JOIN bkmasters bk ON bc.bkid = bk.bkid
             WHERE bc.loginid = ?
-              AND bk.cognito_credentials IS NOT NULL
+--               AND bk.cognito_credentials IS NOT NULL
             LIMIT 1
         `
 
