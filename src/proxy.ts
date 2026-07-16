@@ -34,10 +34,6 @@ function extractPathTenant(pathname: string): string | null {
  * Returns Set of valid tenant codes (buscomps.loginid).
  */
 async function getTenantAllowlist(): Promise<Set<string>> {
-    // Return cached allowlist if not expired
-    if (tenantAllowlistCache && Date.now() < tenantAllowlistCache.expiresAt) {
-        return tenantAllowlistCache.allowlist
-    }
 
     // Query database for all tenants
     const tenants = await listTenantsFromDb()
