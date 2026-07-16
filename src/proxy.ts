@@ -1,17 +1,9 @@
 import type {NextRequest} from 'next/server'
 import {NextResponse} from 'next/server'
 import {jwtVerify} from 'jose'
-import {listTenantsFromDb} from './lib/tenant-resolver'
+import {resolveTenantConfigFromDb} from './lib/tenant-resolver'
 import {runWithTenant} from './lib/tenant-context'
 
-// Tenant allowlist cache with 5-min TTL
-interface TenantAllowlistCache {
-    allowlist: Set<string>
-    expiresAt: number
-}
-
-let tenantAllowlistCache: TenantAllowlistCache | null = null
-const ALLOWLIST_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 const TENANT_PATH_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
 const RESERVED_PATH_SEGMENTS = new Set(['api', 'auth', 'dashboard', '_next', 'favicon.ico'])
 
@@ -27,25 +19,6 @@ function extractPathTenant(pathname: string): string | null {
     } catch {
         return null
     }
-}
-
-/**
- * Build tenant allowlist from database with 5-min TTL cache.
- * Returns Set of valid tenant codes (buscomps.loginid).
- */
-async function getTenantAllowlist(): Promise<Set<string>> {
-
-    // Query database for all tenants
-    const tenants = await listTenantsFromDb()
-    const allowlist = new Set(tenants.map((t) => t.loginid.toLowerCase()))
-
-    // Cache result with TTL
-    tenantAllowlistCache = {
-        allowlist,
-        expiresAt: Date.now() + ALLOWLIST_CACHE_TTL_MS,
-    }
-
-    return allowlist
 }
 
 export async function proxy(request: NextRequest) {
@@ -64,13 +37,12 @@ export async function proxy(request: NextRequest) {
     const tenantCode = pathTenant || cookieTenant
     const source = pathTenant ? 'path' : cookieTenant ? 'cookie' : 'none'
 
-    // Validate tenant against allowlist
+    // Validate tenant with a direct database lookup.
     let tenant = ''
     if (tenantCode) {
         console.log("current tenant code", tenantCode);
-        const allowlist = await getTenantAllowlist()
-        console.log("current allow list", allowlist);
-        if (allowlist.has(tenantCode)) {
+        const tenantConfig = await resolveTenantConfigFromDb(tenantCode)
+        if (tenantConfig) {
             tenant = tenantCode
         } else {
             // Invalid tenant code - clear cookie and redirect to root
