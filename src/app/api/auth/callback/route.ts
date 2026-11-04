@@ -4,20 +4,23 @@ import {resolveTenantConfig} from '@/lib/env-config'
 import {SignJWT} from 'jose'
 import {cookies} from 'next/headers'
 import {logAuditEvent} from '@/lib/audit-log'
-import {detectTenant} from '@/lib/tenant-detection'
 import {isLocalDev} from '@/lib/url-builder'
 import {resolveRequestOrigin} from '@/lib/request-origin'
 import {readSignedOAuthState, resolveOAuthCallbackState} from '@/lib/oauth-state'
+import {isSmartiMateTokenSource} from '@/lib/auth-token-source'
+import type {SmartiMateTokenSource} from '@/lib/auth-token-source'
 
 type CognitoUserPayload = {
     sub?: string
+    staff_id?: string
     email?: string
     name?: string
     preferred_username?: string
     given_name?: string
     family_name?: string
     tenant_id?: string
-    phonenumber?: string
+    token_source?: SmartiMateTokenSource
+    phoneNumber?: string
 }
 
 type TokenExchangeResponse = {
@@ -28,46 +31,6 @@ type TokenExchangeResponse = {
     expires_in?: number
     scope?: string
     token_source?: string
-}
-
-async function fetchCognitoGetUser(accessToken: string, region: string): Promise<CognitoUserPayload> {
-    const endpoint =
-        process['env']['AWS' + '_ENDPOINT_URL'] ||
-        `https://cognito-idp.${region}.amazonaws.com/`;
-
-    const response = await fetch(endpoint.endsWith('/') ? endpoint : `${endpoint}/`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-amz-json-1.1',
-            'X-Amz-Target': 'AWSCognitoIdentityProviderService.GetUser',
-        },
-        body: JSON.stringify({AccessToken: accessToken}),
-    });
-
-    if (!response.ok) {
-        throw new Error(await response.text())
-    }
-
-    const result = await response.json() as {
-        Username?: string
-        UserAttributes?: Array<{ Name?: string; Value?: string }>
-    }
-    const attributes = Object.fromEntries(
-        (result.UserAttributes || [])
-            .filter(attribute => attribute.Name)
-            .map(attribute => [attribute.Name as string, attribute.Value || ''])
-    )
-
-    return {
-        sub: attributes.sub || result.Username,
-        email: attributes.email || '',
-        name: attributes.name || '',
-        preferred_username: attributes.preferred_username || result.Username || '',
-        given_name: attributes.given_name || '',
-        family_name: attributes.family_name || '',
-        tenant_id: attributes['custom:tenant_id'] || attributes.tenant_id || '',
-        phonenumber: attributes.phone_number || '',
-    }
 }
 
 function smartiMateUserInfoUrlFromTokenUrl(tokenUrl: string, tenant: string) {
@@ -92,16 +55,20 @@ async function fetchSmartiMateUserInfo(accessToken: string, tokenUrl: string, te
         email?: string
         name?: string
         tenant_id?: string
+        staff_id?: string
+        token_source?: SmartiMateTokenSource
         phone_number?: string
         phonenumber?: string
     }
 
     return {
         sub: result.sub,
+        staff_id: result.staff_id,
         email: result.email,
         name: result.name,
         tenant_id: result.tenant_id,
-        phonenumber: result.phonenumber || result.phone_number,
+        token_source: result.token_source,
+        phoneNumber: result.phonenumber || result.phone_number,
     }
 }
 
@@ -112,11 +79,6 @@ export async function GET(request: NextRequest) {
     const providerError = searchParams.get('error')
     const providerErrorDescription = searchParams.get('error_description')
     const requestOrigin = resolveRequestOrigin(request.headers, request.nextUrl.origin)
-
-    // Detect tenant from subdomain first
-    const {tenantCode: subdomainTenant} = detectTenant(
-        request.headers.get('host') || ''
-    )
 
     const cookieStore = await cookies()
     const signedState = await readSignedOAuthState(oauthSession)
@@ -132,14 +94,8 @@ export async function GET(request: NextRequest) {
         name => cookieStore.get(name)?.value
     )
 
-    // Priority: subdomain > OAuth session JWT > cookie
-    const tenant = subdomainTenant || stateTenant || cookieTenant
-
-    // Validate tenant consistency
-    if (subdomainTenant && stateTenant && subdomainTenant !== stateTenant) {
-        logAuditEvent('validation_failure', tenant || 'unknown', request.headers, {error: 'tenant_mismatch_subdomain'})
-        return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
-    }
+    // Priority: OAuth session JWT > cookie (path-based only)
+    const tenant = stateTenant || cookieTenant
 
     if (providerError) {
         const errorUrlObj = new URL('/auth/error', requestOrigin)
@@ -169,12 +125,9 @@ export async function GET(request: NextRequest) {
         }
 
 
-        // The interactive login happens in Smart iMATE /{tenantCode}/login.php.
-        // login.php authenticates via Cognito USER_PASSWORD_AUTH, stores Cognito tokens in session.
-        // Then login.php redirects to /oauth2/authorize which generates the auth code JWT.
-        // /oauth2/authorize links the Cognito tokens (from session) to the auth code JWT.
-        // Now we exchange the auth code with Smart iMATE /oauth2/token endpoint.
-        // /oauth2/token validates the auth code JWT and returns the linked Cognito tokens.
+        // Smart iMATE authenticates through Cognito in cloud or local staff auth when isolated.
+        // Its authorize endpoint binds the source-tagged access token to a short-lived auth code.
+        // This backend exchange validates PKCE and returns that linked token.
         const redirectUri = `${requestOrigin}/api/auth/callback`
 
         const tokenParams = new URLSearchParams({
@@ -218,7 +171,7 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_exchange_failed', requestOrigin))
         }
 
-        // Normal login returns Cognito tokens. Admin impersonation returns a Smart iMATE JWT.
+        // Cloud login returns Cognito tokens. Isolated login and impersonation return Smart iMATE JWTs.
         const tokens = await tokenResponse.json() as TokenExchangeResponse
 
         if (!tokens.access_token) {
@@ -226,36 +179,29 @@ export async function GET(request: NextRequest) {
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }
 
+        if (!isSmartiMateTokenSource(tokens.token_source)) {
+            console.error('Unknown token source:', {tenant, tokenSource: tokens.token_source})
+            return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
+        }
+
         let payload: CognitoUserPayload
         try {
-            if (tokens.token_source === 'smartimate_impersonation') {
-                payload = await fetchSmartiMateUserInfo(tokens.access_token, config.smartimateTokenUrl, tenant)
-            } else {
-                // Decode token to find actual issuer (Smart iMATE's Cognito pool)
-                const tokenParts = tokens.access_token.split('.')
-                let actualRegion = config.region
-
-                if (tokenParts.length >= 2) {
-                    const tokenPayload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString())
-
-                    // Extract region and pool from issuer
-                    // Format: https://cognito-idp.{region}.amazonaws.com/{poolId}
-                    const issuerMatch = tokenPayload.iss?.match(/cognito-idp\.([^.]+)\.amazonaws\.com\/([^/]+)/)
-                    if (issuerMatch) {
-                        const [, tokenRegion] = issuerMatch
-                        actualRegion = tokenRegion
-                    }
-                }
-
-                // Call GetUser directly with token's pool
-                payload = await fetchCognitoGetUser(tokens.access_token, actualRegion)
-            }
+            payload = await fetchSmartiMateUserInfo(tokens.access_token, config.smartimateTokenUrl, tenant)
         } catch (error) {
             console.error('UserInfo failed:', {
                 tenant,
                 tokenSource: tokens.token_source || 'cognito',
                 error: error instanceof Error ? error.message : String(error)
             })
+            return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
+        }
+
+        if (!payload.tenant_id || payload.tenant_id.toLowerCase() !== tenant.toLowerCase()) {
+            logAuditEvent('validation_failure', tenant, request.headers, {error: 'tenant_mismatch'})
+            return Response.redirect(new URL('/auth/error?error=tenant_mismatch', requestOrigin))
+        }
+        if (payload.token_source !== tokens.token_source || !payload.sub || !payload.staff_id || !payload.email) {
+            logAuditEvent('validation_failure', tenant, request.headers, {error: 'identity_mismatch'})
             return Response.redirect(new URL('/auth/error?error=token_validation_failed', requestOrigin))
         }
 
@@ -266,14 +212,16 @@ export async function GET(request: NextRequest) {
             payload.email ||
             'Unknown User'
 
-        // Keep the browser session cookie small. Raw Cognito tokens can exceed cookie limits.
+        // Keep refresh/id tokens out of the cookie; access token is needed for userinfo revalidation.
         const secret = new TextEncoder().encode(process.env.AUTH_SECRET)
         const sessionToken = await new SignJWT({
             sub: payload.sub,
             email: payload.email,
             name: userName,
-            phonenumber: payload.phonenumber,
+            phonenumber: payload.phoneNumber,
             tenant,
+            accessToken: tokens.access_token,
+            tokenSource: tokens.token_source,
             expiresAt: Math.floor(Date.now() / 1000) + Number(tokens.expires_in || 3600) - 60,
         })
             .setProtectedHeader({alg: 'HS256'})

@@ -1,28 +1,56 @@
 import {SsoButton} from '@/components/sso-buttons'
 import {getSession} from '@/lib/auth'
+import {resolveTenantConfig} from '@/lib/env-config'
+import {
+    doesSessionMatchTenant,
+    isSessionRevalidationRequested,
+    revalidateSessionViaSmartiMateUserInfo,
+} from '@/lib/session-revalidation'
+import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
 import {redirect} from 'next/navigation'
 import {SignOutButton} from '../dashboard/signout-button'
+import {Greeting} from './geeting'
 
 const TENANT_CODE_FORMAT = /^[a-zA-Z0-9_-]{1,50}$/
 
 type TenantDashboardPageProps = {
     params: Promise<{ tenantCode: string }>
+    searchParams: Promise<{
+        logout?: string
+        rs?: string
+    }>
 }
 
-export default async function TenantDashboardPage({params}: TenantDashboardPageProps) {
-    const [{tenantCode}, session] = await Promise.all([params, getSession()])
+export default async function TenantDashboardPage({params, searchParams}: TenantDashboardPageProps) {
+    const [{tenantCode}, session, query] = await Promise.all([params, getSession(), searchParams])
+    const {logout, rs} = query
 
     if (!TENANT_CODE_FORMAT.test(tenantCode)) {
         redirect('/')
     }
 
-    if (!session || tenantCode !== session.tenant) {
-        const callbackUrl = `/${encodeURIComponent(tenantCode)}`
-        const searchParams = new URLSearchParams({
+    if (logout === 'true') {
+        return <Greeting tenantCode={tenantCode}/>
+    }
+
+    const signinUrl = `/api/auth/signin?${new URLSearchParams({
+        tenant: tenantCode.toLowerCase(),
+        callbackUrl: `/${tenantCode}`,
+    }).toString()}`
+
+    if (isSessionRevalidationRequested(rs)) {
+        const config = await resolveTenantConfigFromDb(tenantCode) ?? await resolveTenantConfig(tenantCode)
+        const isRevalidated = config && await revalidateSessionViaSmartiMateUserInfo(session, {
             tenant: tenantCode,
-            callbackUrl,
+            smartimateTokenUrl: config.smartimateTokenUrl,
         })
-        redirect(`/api/auth/signin?${searchParams.toString()}`)
+        if (!isRevalidated) {
+            redirect(signinUrl)
+        }
+    }
+
+    if (!session || !doesSessionMatchTenant(session, tenantCode)) {
+        redirect(signinUrl)
     }
 
     return (
@@ -90,10 +118,9 @@ export default async function TenantDashboardPage({params}: TenantDashboardPageP
                         <SsoButton
                             target="smartimate"
                             tenant={session.tenant}
-                            accessToken={session.accessToken}
                             label="Smart iMATEへ移動"
                         />
-                        <SignOutButton/>
+                        <SignOutButton redirectTo={`/${session.tenant}`}/>
                     </div>
                 </div>
 

@@ -59,21 +59,21 @@ export default async function Home() {
                     </p>
                 </div>
 
-                {/* Tenant Selection */}
-                <div className="space-y-3">
-                    <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                        テナントを選択
-                    </p>
-                    {tenants.length > 0 ? (
-                        <TenantSelectionForm tenants={tenants}/>
-                    ) : (
-                        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-                            <p className="text-sm text-red-700">
-                                SSOが有効なテナントが見つかりません。
-                            </p>
-                        </div>
-                    )}
-                </div>
+                {/*/!* Tenant Selection *!/*/}
+                {/*<div className="space-y-3">*/}
+                {/*    <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">*/}
+                {/*        テナントを選択*/}
+                {/*    </p>*/}
+                {/*    {tenants.length > 0 ? (*/}
+                {/*        <TenantSelectionForm tenants={tenants}/>*/}
+                {/*    ) : (*/}
+                {/*        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">*/}
+                {/*            <p className="text-sm text-red-700">*/}
+                {/*                SSOが有効なテナントが見つかりません。*/}
+                {/*            </p>*/}
+                {/*        </div>*/}
+                {/*    )}*/}
+                {/*</div>*/}
 
                 {/* Footer Info */}
                 <div className="pt-4 border-t border-slate-200">

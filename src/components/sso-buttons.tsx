@@ -5,11 +5,10 @@ import {useState} from 'react'
 interface SsoButtonProps {
     target: 'smartimate'
     tenant: string
-    accessToken?: string
     label?: string
 }
 
-export function SsoButton({target, tenant, accessToken, label}: SsoButtonProps) {
+export function SsoButton({target, tenant, label}: SsoButtonProps) {
     const [loading, setLoading] = useState(false)
     const buttonText = label || `${target === 'smartimate' ? 'Smart iMATE' : 'DataMaster'}にログイン`
 
@@ -19,7 +18,7 @@ export function SsoButton({target, tenant, accessToken, label}: SsoButtonProps) 
             const response = await fetch('/api/auth/sso-link', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({target, tenant, accessToken}),
+                body: JSON.stringify({target, tenant}),
             })
 
             const data = await response.json()

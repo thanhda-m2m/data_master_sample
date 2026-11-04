@@ -18,8 +18,13 @@ export async function OPTIONS(request: NextRequest) {
         }
     });
 }
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export async function POST(request: NextRequest) {
+    await sleep(3000);
+
     let body;
     try {
         const rawBody = await request.json();

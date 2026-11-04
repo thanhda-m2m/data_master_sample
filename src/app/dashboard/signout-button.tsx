@@ -1,9 +1,15 @@
 'use client'
 
-export function SignOutButton() {
+type SignOutButtonProps = {
+    redirectTo?: string
+}
+
+export function SignOutButton({redirectTo = '/'}: SignOutButtonProps) {
     async function handleSignOut() {
         await fetch('/api/auth/signout', {method: 'POST'})
-        window.location.href = '/'
+        const url = new URL(redirectTo, window.location.origin)
+        url.searchParams.set('logout', 'true')
+        window.location.href = url.toString()
     }
 
     return (

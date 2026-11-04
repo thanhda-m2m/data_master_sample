@@ -1,6 +1,7 @@
 import {listTenantsFromDb, resolveTenantConfigFromDb} from './tenant-resolver'
 
 export interface TenantConfig {
+    authMode: 'cognito' | 'smartimate_local'
     userPoolId: string
     clientId: string
     clientSecret: string
