@@ -1,38 +1,23 @@
-import {describe, expect, it} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {resolveRequestOrigin} from '../request-origin'
 
-describe('resolveRequestOrigin', () => {
-    it('uses forwarded host and proto from a reverse proxy', () => {
-        const headers = new Headers({
-            'host': 'localhost:3000',
-            'x-forwarded-host': 'hozen-tak-sso-login.tbtech.jp',
-            'x-forwarded-proto': 'http',
-        })
+beforeEach(() => vi.stubEnv('DATAMASTER_CALLBACK_URL', ''))
+afterEach(() => vi.unstubAllEnvs())
 
-        expect(resolveRequestOrigin(headers, 'http://localhost:3000')).toBe(
-            'https://hozen-tak-sso-login.tbtech.jp'
-        )
+describe('callback origin', () => {
+    it('uses the configured callback origin over incoming proxy headers', () => {
+        vi.stubEnv('DATAMASTER_CALLBACK_URL', 'http://localhost:3000/api/auth/callback')
+        expect(resolveRequestOrigin(new Headers({'x-forwarded-host': 'other.example', 'x-forwarded-proto': 'https'}), 'https://internal.example'))
+            .toBe('http://localhost:3000')
     })
 
-    it('falls back to the request host when forwarded host is missing', () => {
-        const headers = new Headers({
-            'host': 'hozen-tak-sso-login.tbtech.jp',
-        })
-
-        expect(resolveRequestOrigin(headers, 'http://localhost:3000')).toBe(
-            'https://hozen-tak-sso-login.tbtech.jp'
-        )
+    it('does not force HTTPS when the forwarded request uses HTTP', () => {
+        expect(resolveRequestOrigin(new Headers({'host': 'internal:3000', 'x-forwarded-host': 'datamaster.example.com', 'x-forwarded-proto': 'http'}), 'https://internal:3000'))
+            .toBe('http://datamaster.example.com')
     })
 
-    it('uses the first forwarded value when proxies append multiple values', () => {
-        const headers = new Headers({
-            'host': 'localhost:3000',
-            'x-forwarded-host': 'hozen-tak-sso-login.tbtech.jp, internal.local',
-            'x-forwarded-proto': 'https, http',
-        })
-
-        expect(resolveRequestOrigin(headers, 'http://localhost:3000')).toBe(
-            'https://hozen-tak-sso-login.tbtech.jp'
-        )
+    it('uses the first proxy host and protocol when no callback is configured', () => {
+        expect(resolveRequestOrigin(new Headers({'x-forwarded-host': 'public.example.com, internal.local', 'x-forwarded-proto': 'https, http'}), 'http://internal:3000'))
+            .toBe('https://public.example.com')
     })
 })

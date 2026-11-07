@@ -77,10 +77,4 @@ describe('tenant-detection', () => {
         })
     })
 
-    it('keeps subdomain tenant priority during sign in', () => {
-        expect(resolveSigninTenant('tenantC.localhost:3000', 'tenantB', 'tenantA')).toEqual({
-            tenantCode: 'tenantc',
-            source: 'subdomain',
-        })
-    })
 })

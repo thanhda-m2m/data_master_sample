@@ -1,4 +1,5 @@
 import {jwtVerify, SignJWT} from 'jose'
+import {authSecret} from './auth-secret'
 
 export type OAuthStatePayload = {
     tenant: string
@@ -28,35 +29,26 @@ export function normalizeOAuthCallbackUrl(
     requestOrigin: string,
     fallbackPath = '/dashboard'
 ): string | null {
-    const candidate = value?.toLowerCase() || fallbackPath
-    if (candidate.startsWith('//')) {
-        return null
-    }
-    if (candidate.startsWith('/')) {
-        return candidate
-    }
-
+    const candidate = value || fallbackPath
+    if (!candidate.startsWith('/') && !/^https?:\/\//i.test(candidate)) return null
     try {
-        const url = new URL(candidate)
-        if (url.origin !== requestOrigin) {
-            return null
-        }
+        const url = new URL(candidate, requestOrigin)
+        if (url.origin !== requestOrigin) return null
         return `${url.pathname}${url.search}${url.hash}`
     } catch {
         return null
     }
 }
 
-function getAuthSecret() {
-    return new TextEncoder().encode(process['env']['AUTH' + '_SECRET'])
-}
 
 export async function signOAuthState(payload: OAuthStatePayload) {
     return new SignJWT(payload)
         .setProtectedHeader({alg: 'HS256'})
+        .setIssuer('datamaster')
+        .setAudience('datamaster-oauth-state')
         .setIssuedAt()
         .setExpirationTime('10m')
-        .sign(getAuthSecret())
+        .sign(authSecret())
 }
 
 export async function readSignedOAuthState(state: string | null): Promise<SignedOAuthState | null> {
@@ -65,7 +57,12 @@ export async function readSignedOAuthState(state: string | null): Promise<Signed
     }
 
     try {
-        const {payload} = await jwtVerify(state, getAuthSecret())
+        const {payload} = await jwtVerify(state, authSecret(), {
+            algorithms: ['HS256'],
+            issuer: 'datamaster',
+            audience: 'datamaster-oauth-state',
+            requiredClaims: ['exp', 'tenant', 'callbackUrl', 'nonce'],
+        })
         return {
             tenant: typeof payload.tenant === 'string' ? payload.tenant : undefined,
             callbackUrl: typeof payload.callbackUrl === 'string' ? payload.callbackUrl : undefined,
@@ -85,9 +82,7 @@ export function resolveOAuthCallbackState(
     const storedState = stateTenant ? readCookie(`oauth_state_${stateTenant}`) : undefined
     const codeVerifier = stateTenant ? readCookie(`oauth_code_verifier_${stateTenant}`) : undefined
     const cookieTenant = stateTenant ? readCookie(`oauth_tenant_${stateTenant}`) : undefined
-    const callbackUrl = stateTenant
-        ? readCookie(`oauth_callback_url_${stateTenant}`) || signedState?.callbackUrl || '/'
-        : signedState?.callbackUrl || '/'
+    const callbackUrl = signedState?.callbackUrl || '/'
 
     return {
         stateTenant,

@@ -1,6 +1,6 @@
 import type {NextRequest} from 'next/server'
 import {NextResponse} from 'next/server'
-import {jwtVerify} from 'jose'
+import {readSession} from './lib/session'
 import {resolveTenantConfigFromDb} from './lib/tenant-resolver'
 import {runWithTenant} from './lib/tenant-context'
 
@@ -53,19 +53,8 @@ export async function proxy(request: NextRequest) {
         }
     }
 
-    // Validate session cookie
-    const sessionCookie = request.cookies.get('session')?.value
-    let isLoggedIn = false
-
-    if (sessionCookie) {
-        try {
-            const secret = new TextEncoder().encode(process.env.AUTH_SECRET!)
-            await jwtVerify(sessionCookie, secret)
-            isLoggedIn = true
-        } catch {
-            isLoggedIn = false
-        }
-    }
+    const session = await readSession(request.cookies.get('session')?.value)
+    const isLoggedIn = Boolean(session && (!tenant || session.tenant === tenant))
 
     // Public routes (always accessible)
     if (pathname === '/') {

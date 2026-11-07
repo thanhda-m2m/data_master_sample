@@ -1,12 +1,11 @@
 import {SsoButton} from '@/components/sso-buttons'
 import {getSession} from '@/lib/auth'
-import {resolveTenantConfig} from '@/lib/env-config'
 import {
     doesSessionMatchTenant,
     isSessionRevalidationRequested,
-    revalidateSessionViaSmartiMateUserInfo,
+    switchPendingCookieName,
 } from '@/lib/session-revalidation'
-import {resolveTenantConfigFromDb} from '@/lib/tenant-resolver'
+import {cookies} from 'next/headers'
 import {redirect} from 'next/navigation'
 import {SignOutButton} from '../dashboard/signout-button'
 import {Greeting} from './geeting'
@@ -22,7 +21,7 @@ type TenantDashboardPageProps = {
 }
 
 export default async function TenantDashboardPage({params, searchParams}: TenantDashboardPageProps) {
-    const [{tenantCode}, session, query] = await Promise.all([params, getSession(), searchParams])
+    const [{tenantCode}, session, query, cookieStore] = await Promise.all([params, getSession(), searchParams, cookies()])
     const {logout, rs} = query
 
     if (!TENANT_CODE_FORMAT.test(tenantCode)) {
@@ -33,23 +32,17 @@ export default async function TenantDashboardPage({params, searchParams}: Tenant
         return <Greeting tenantCode={tenantCode}/>
     }
 
+    const normalizedTenant = tenantCode.toLowerCase()
+    const switchPending = cookieStore.get(switchPendingCookieName(normalizedTenant))?.value === '1'
+    const forceSwitch = isSessionRevalidationRequested(rs) || switchPending
     const signinUrl = `/api/auth/signin?${new URLSearchParams({
-        tenant: tenantCode.toLowerCase(),
+        tenant: normalizedTenant,
         callbackUrl: `/${tenantCode}`,
+        ...(forceSwitch ? {switch: '1'} : {}),
     }).toString()}`
 
-    if (isSessionRevalidationRequested(rs)) {
-        const config = await resolveTenantConfigFromDb(tenantCode) ?? await resolveTenantConfig(tenantCode)
-        const isRevalidated = config && await revalidateSessionViaSmartiMateUserInfo(session, {
-            tenant: tenantCode,
-            smartimateTokenUrl: config.smartimateTokenUrl,
-        })
-        if (!isRevalidated) {
-            redirect(signinUrl)
-        }
-    }
-
-    if (!session || !doesSessionMatchTenant(session, tenantCode)) {
+    // A forced switch must not render the previously signed-in user if replacement fails.
+    if (forceSwitch || !session || !doesSessionMatchTenant(session, tenantCode)) {
         redirect(signinUrl)
     }
 
@@ -127,7 +120,7 @@ export default async function TenantDashboardPage({params, searchParams}: Tenant
                 {/* Session Info */}
                 <div className="rounded-lg bg-blue-50 border border-blue-200 p-4">
                     <p className="text-sm text-blue-700">
-                        <strong>🔒 セッション状態:</strong> アクティブ • Smart iMATE OAuth統合により保護されています
+                        <strong>🔒 セッション状態:</strong> アクティブ • Amazon Cognito SSOにより保護されています
                     </p>
                 </div>
             </div>

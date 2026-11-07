@@ -19,14 +19,14 @@ function normalizeProtocol(protocol: string, fallbackOrigin: string): string {
 }
 
 export function resolveRequestOrigin(headers: Headers, fallbackOrigin: string): string {
+    if (process.env.DATAMASTER_CALLBACK_URL) {
+        return new URL(process.env.DATAMASTER_CALLBACK_URL).origin
+    }
     const host = firstHeaderValue(headers.get('x-forwarded-host')) || firstHeaderValue(headers.get('host'))
     if (!host) {
         return fallbackOrigin
     }
 
     const protocol = normalizeProtocol(firstHeaderValue(headers.get('x-forwarded-proto')), fallbackOrigin)
-    // Force HTTPS when behind ALB/proxy to satisfy OAuth TLS requirement
-    // Use localhost check to allow HTTP in local dev
-    const safeProtocol = host.includes('localhost') || host.startsWith('127.') || host.startsWith('192.168.') ? protocol : 'https'
-    return `${safeProtocol}://${host}`
+    return `${protocol}://${host}`
 }

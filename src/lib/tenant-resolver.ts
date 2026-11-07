@@ -1,10 +1,10 @@
 /**
  * Database-driven tenant resolver with LRU cache.
- * Queries buscomps + bkmasters tables for OAuth credentials.
+ * Reads Cognito pool metadata from buscomps + bkmasters; app credentials stay in DataMaster.
  */
 
 import {query} from './db'
-import type {CognitoCredentials, TenantConfig, TenantSummary} from './tenant-types'
+import type {TenantConfig, TenantSummary} from './tenant-types'
 
 // LRU cache: Map<tenantCode, {config, expiresAt}>
 interface CacheEntry {
@@ -23,21 +23,11 @@ interface TenantDbRow {
     bkid: number
     loginid: string
     bcname: string
-    cognito_credentials: string | CognitoCredentials | null // JSON string, parsed object, or absent for isolated tenants
+    cognito_custom_domain: string | null
     cognito_region: string | null
     userPoolId: string | null
 }
 
-function envValue(...names: string[]) {
-    for (const name of names) {
-        const value = process.env[name]
-        if (value) {
-            return value
-        }
-    }
-
-    return ''
-}
 
 /**
  * Get cached tenant config if not expired.
@@ -73,90 +63,17 @@ function setCachedConfig(tenantCode: string, config: TenantConfig): void {
     })
 }
 
-/**
- * Parse cognito_credentials JSON and extract datamaster app client credentials.
- * Returns null if JSON malformed or missing required keys.
- * Handles both string (from raw query) and object (from mysql2 JSON type).
- */
-function parseCognitoCredentials(data: string | CognitoCredentials): { clientId: string; clientSecret: string } | null {
+function dataMasterClient(tenantCode: string): {clientId: string; clientSecret: string} | null {
     try {
-        let parsed: CognitoCredentials
-
-        // mysql2 returns JSON columns as objects, not strings
-        if (typeof data === 'string') {
-            parsed = JSON.parse(data)
-        } else if (typeof data === 'object' && data !== null) {
-            parsed = data
-        } else {
-            console.error('Invalid cognito_credentials type', {type: typeof data})
+        const clients = JSON.parse(process.env.DATAMASTER_COGNITO_CLIENTS || '{}')
+        const client = clients?.[tenantCode]
+        if (typeof client?.client_id !== 'string' || !client.client_id.trim()
+            || typeof client.client_secret !== 'string' || !client.client_secret.trim()) {
             return null
         }
-
-        const clientId = parsed.datamaster?.app_client_id
-        const clientSecret = parsed.datamaster?.app_client_secret
-
-        if (!clientId || !clientSecret) {
-            console.error('Missing required keys in cognito_credentials JSON', {
-                hasDatamaster: !!parsed.datamaster,
-                hasClientId: !!clientId,
-                hasClientSecret: !!clientSecret,
-            })
-            return null
-        }
-
-        return {clientId, clientSecret}
-    } catch (error) {
-        console.error('Failed to parse cognito_credentials JSON', {
-            error: error instanceof Error ? error.message : String(error),
-        })
+        return {clientId: client.client_id.trim(), clientSecret: client.client_secret}
+    } catch {
         return null
-    }
-}
-
-export function isolatedDataMasterBrokerClientId(tenantCode: string) {
-    const normalized = tenantCode.trim().toLowerCase()
-    return /^[a-z0-9_-]{1,50}$/.test(normalized) ? `datamaster-${normalized}` : ''
-}
-
-/**
- * Build OAuth URLs from region and userPoolId.
- */
-function envKey(...parts: string[]) {
-    return parts.join('_')
-}
-
-function cognitoHostedUiBaseUrl() {
-    const customDomain = envValue(
-        envKey('DATAMASTER', 'COGNITO', 'CUSTOM', 'DOMAIN'),
-        envKey('COGNITO', 'CUSTOM', 'DOMAIN')
-    )
-    if (customDomain) {
-        return customDomain.startsWith('http') ? customDomain : `https://${customDomain}`
-    }
-
-    return envValue(envKey('COGNITO', 'HOSTED', 'UI', 'BASE', 'URL')) || envValue('SMARTIMATE_INTERNAL_BASE_URL') || 'https://cognito.example.com'
-}
-
-function buildOAuthUrls(region: string, userPoolId: string) {
-    const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`
-    const hostedUiBaseUrl = cognitoHostedUiBaseUrl().replace(/\/+$/, '')
-
-    return {
-        issuer,
-        authorizationUrl: envValue(envKey('COGNITO', 'AUTHORIZE', 'URL')) || `${hostedUiBaseUrl}/oauth2/authorize`,
-        tokenUrl: envValue(envKey('COGNITO', 'TOKEN', 'URL')) || `${hostedUiBaseUrl}/oauth2/token`,
-        userInfoUrl: envValue(envKey('COGNITO', 'USERINFO', 'URL')) || `${hostedUiBaseUrl}/oauth2/userInfo`,
-    }
-}
-
-function buildSmartiMateUrls() {
-    const publicBaseUrl = (envValue('SMARTIMATE_BASE_URL') || 'http://localhost:8080').replace(/\/+$/, '')
-    const internalBaseUrl = (envValue('SMARTIMATE_INTERNAL_BASE_URL') || publicBaseUrl).replace(/\/+$/, '')
-
-    return {
-        smartimateAuthorizeUrl: envValue('SMARTIMATE_AUTHORIZE_URL') || `${publicBaseUrl}/oauth2/authorize`,
-        smartimateTokenUrl: envValue('SMARTIMATE_TOKEN_URL') || `${internalBaseUrl}/oauth2/token`,
-        smartimateValidateUrl: envValue('SMARTIMATE_VALIDATE_URL') || `${internalBaseUrl}/oauth2/validate`,
     }
 }
 
@@ -169,22 +86,12 @@ function normalizeTenantSummary(row: Omit<TenantSummary, 'loginId' | 'compname'>
 }
 
 /**
- * Resolve tenant configuration from database by tenant code (loginId).
- *
- * Query pattern:
- * - JOIN buscomps + bkmasters on bkid
- * - Cloud tenant: parse Cognito credentials and pool metadata
- * - Isolated tenant: derive the same tenant-bound public broker client as Smart iMATE
- *
- * Returns null if:
- * - Tenant not found in database
- * - Cloud Cognito configuration is malformed or incomplete
- * - Tenant has only part of the Cognito configuration
- * - Database query fails
- *
- * Cache: 10-min TTL, max 100 entries with LRU eviction.
+ * Resolve a cloud tenant's Cognito endpoints and its separate DataMaster app client.
+ * Missing configuration fails closed; iMATE credentials are never reused.
  */
 export async function resolveTenantConfigFromDb(tenantCode: string): Promise<TenantConfig | null> {
+    tenantCode = tenantCode.trim().toLowerCase()
+    if (!/^[a-z0-9_-]{1,50}$/.test(tenantCode)) return null
     // Check cache first
     const cached = getCachedConfig(tenantCode)
     if (cached) {
@@ -196,7 +103,7 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
             SELECT bc.bkid,
                    bc.loginid,
                    bc.bcname,
-                   bk.cognito_credentials,
+                   bk.cognito_custom_domain,
                    bk.cognito_region,
                    bk.userPoolId
             FROM buscomps bc
@@ -214,46 +121,24 @@ export async function resolveTenantConfigFromDb(tenantCode: string): Promise<Ten
 
         const row = rows[0]
 
-        const hasCognitoCredentials = row.cognito_credentials !== null
-        const hasCognitoPool = Boolean(row.userPoolId)
-        const hasCognitoRegion = Boolean(row.cognito_region)
-        const isIsolatedTenant = !hasCognitoCredentials && !hasCognitoPool
-
-        if (!isIsolatedTenant && (!hasCognitoCredentials || !hasCognitoPool || !hasCognitoRegion)) {
-            console.error('Incomplete Cognito tenant configuration', {
-                tenantCode,
-                hasCredentials: hasCognitoCredentials,
-                hasRegion: hasCognitoRegion,
-                hasUserPoolId: hasCognitoPool,
-            })
+        const credentials = dataMasterClient(tenantCode)
+        if (!credentials || !row.userPoolId || !row.cognito_region || !row.cognito_custom_domain) {
+            console.warn('DataMaster Cognito configuration missing', {tenantCode})
             return null
         }
-
-        const credentials = isIsolatedTenant
-            ? {clientId: isolatedDataMasterBrokerClientId(row.loginid), clientSecret: ''}
-            : parseCognitoCredentials(row.cognito_credentials as string | CognitoCredentials)
-        if (!credentials?.clientId) {
-            return null
-        }
-
-        const oauthUrls = isIsolatedTenant
-            ? {issuer: '', authorizationUrl: '', tokenUrl: '', userInfoUrl: ''}
-            : buildOAuthUrls(row.cognito_region as string, row.userPoolId as string)
-        const smartiMateUrls = buildSmartiMateUrls()
-
+        const domain = row.cognito_custom_domain.trim()
+        const hostedUi = new URL(domain.includes('://') ? domain : `https://${domain}`)
+        const issuer = `https://cognito-idp.${row.cognito_region}.amazonaws.com/${row.userPoolId}`
         const config: TenantConfig = {
-            authMode: isIsolatedTenant ? 'smartimate_local' : 'cognito',
-            loginId: row.loginid,
-            userPoolId: row.userPoolId || '',
+            loginId: row.loginid.toLowerCase(),
+            userPoolId: row.userPoolId,
             clientId: credentials.clientId,
             clientSecret: credentials.clientSecret,
-            region: row.cognito_region || '',
-            cognitoAuthorizeUrl: oauthUrls.authorizationUrl,
-            cognitoTokenUrl: oauthUrls.tokenUrl,
-            cognitoUserInfoUrl: oauthUrls.userInfoUrl,
-            jwksUri: oauthUrls.issuer ? `${oauthUrls.issuer}/.well-known/jwks.json` : '',
-            ...smartiMateUrls,
-            ...oauthUrls,
+            region: row.cognito_region,
+            issuer,
+            authorizationUrl: new URL('/oauth2/authorize', hostedUi).toString(),
+            tokenUrl: new URL('/oauth2/token', hostedUi).toString(),
+            jwksUri: `${issuer}/.well-known/jwks.json`,
         }
 
         // Cache result

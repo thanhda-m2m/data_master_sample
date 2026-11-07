@@ -1,21 +1,5 @@
 import {listTenantsFromDb, resolveTenantConfigFromDb} from './tenant-resolver'
-
-export interface TenantConfig {
-    authMode: 'cognito' | 'smartimate_local'
-    userPoolId: string
-    clientId: string
-    clientSecret: string
-    region: string
-    loginId: string
-    issuer: string
-    cognitoAuthorizeUrl: string
-    cognitoTokenUrl: string
-    cognitoUserInfoUrl: string
-    jwksUri: string
-    smartimateAuthorizeUrl: string
-    smartimateTokenUrl: string
-    smartimateValidateUrl: string
-}
+import type {TenantConfig} from './tenant-types'
 
 export interface TenantSummary {
     bkid: number

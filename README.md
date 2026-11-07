@@ -1,79 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DataMaster app-switch sample
 
-## Getting Started
+Next.js 16 sample for normal-user SSO between iMATE and DataMaster. Each app uses a **different Cognito app client in the same tenant user pool**. Cognito's Hosted UI browser session supplies SSO; neither app passes its tokens to the other.
 
-First, run the development server:
+## Local setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Start the iMATE web and database services at `http://localhost:8080` and port `3306`.
+2. Run `npm ci` in this directory.
+3. Copy `.env.example` to `.env.local`. Generate `AUTH_SECRET` with `openssl rand -hex 32` and configure the tenant's separate DataMaster client in `DATAMASTER_COGNITO_CLIENTS`.
+4. Register `http://localhost:3000/api/auth/callback` as that client's Cognito callback, enable authorization-code flow, and allow `openid email profile` scopes. The client must be confidential, with a client secret.
+5. Run `npm run dev` and open `http://localhost:3000/thanhda`.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The local `thanhda` environment uses its existing DataMaster Cognito client; its secret remains in ignored `.env.local`. No change to iMATE's `bkmasters.cognito_credentials` JSON is required.
 
-## Smart iMATE Network Routing
+## Configuration
 
-Use separate public and private addresses when DataMaster and Smart iMATE share a VPC:
+- `DATAMASTER_CALLBACK_URL`: exact callback sent to Cognito during authorization and code exchange. Its origin is also used for redirects and cookie security. HTTP localhost is supported; DataMaster does not replace the configured scheme with HTTPS.
+- `DATAMASTER_COGNITO_CLIENTS`: server-only JSON object keyed by lowercase tenant code, each containing `client_id` and `client_secret`. These are **DataMaster** credentials, not iMATE's browser or M2M credentials.
+- `AUTH_SECRET`: at least 32 random bytes, used to sign OAuth state and DataMaster's local sessions.
+- `SMARTIMATE_BASE_URL`: browser-facing iMATE address, used only for the button that returns to iMATE.
+- `HZ_TAK_DB_HOST`, `HZ_TAK_DB_PORT`, `HZ_TAK_DB_NAME`, `HZ_TAK_DB_USER`, `HZ_TAK_DB_PASSWORD`: connection to the shared central database. The resolver joins `buscomps` and `bkmasters` to read the tenant's `userPoolId`, `cognito_region`, and `cognito_custom_domain`.
 
-```text
-SMARTIMATE_BASE_URL=https://smartimate.example.com
-SMARTIMATE_INTERNAL_BASE_URL=http://10.0.12.34:8080
-```
+Keep `.env.local` out of source control. The resolver never falls back to iMATE's credentials or to a placeholder Hosted UI domain. Isolated authentication and administrator impersonation are not supported by this sample's app-switch flow.
 
-Browser login redirects use `SMARTIMATE_BASE_URL`. DataMaster backend token exchange and validation use `SMARTIMATE_INTERNAL_BASE_URL`.
+## Header switching
 
-`SMARTIMATE_TOKEN_URL` and `SMARTIMATE_VALIDATE_URL` can still override individual backend endpoints. If the internal base is unset, backend calls fall back to the public base.
-
-## Cloud and Isolated SSO
-
-DataMaster uses the tenant row to select the broker contract; it does not mirror Smart iMATE's `IS_ISOLATED_ENV` flag.
-
-- Cloud tenants with Cognito credentials keep their configured DataMaster client and receive `token_source=cognito`.
-- Isolated tenants with no Cognito credentials and no user pool use the public client `datamaster-{tenantCode}` with no secret and receive `token_source=smartimate_local`.
-- Admin impersonation continues to use `token_source=smartimate_impersonation`.
-
-All modes use the same signed OAuth state, PKCE S256, exact callback allowlist, backend code exchange, and Smart iMATE tenant UserInfo validation. Missing or mismatched tenant, identity, or token source fails closed.
-
-## Tenant Dashboard Routes
-
-Authenticated users land on a path-based tenant dashboard:
+Set iMATE's `DIGITAL_MASTER_DOMAIN=http://localhost:3000`. Its existing header button opens:
 
 ```text
-https://data-master.example.com/{tenantCode}
+http://localhost:3000/{tenant}?rs=1
 ```
 
-When a user opens `/{tenantCode}` without a matching session, DataMaster shows a tenant-specific sign-in page. The sign-in button starts SSO for that tenant and returns to the same tenant path after login.
+`rs=1` always starts a fresh DataMaster authorization-code flow against Cognito, even if DataMaster already has a session. This avoids retaining a different local user when switching identities in iMATE. A valid Cognito browser session skips another password/MFA sign-in; otherwise Cognito presents the pool's configured sign-in and MFA screens. The callback returns to `/{tenant}` without `rs`, so it does not loop.
 
-Signing out from a tenant dashboard clears the session and returns to `/{tenantCode}`, where the tenant greeting sign-in page is shown.
+The flow uses PKCE S256, signed state bound to HttpOnly cookies, an OIDC nonce, and RS256 ID-token verification against the tenant pool's JWKS. Issuer, app-client audience, token use, expiry, and `custom:tenant_id` must match. Tokens are exchanged server-side; Cognito ID/access/refresh tokens are not stored in browser cookies or returned by the session API. The local identity session expires with the verified Cognito ID token.
 
-`/dashboard` is kept as a compatibility entry point and redirects to the signed-in user's tenant path.
+The DataMaster dashboard's iMATE button navigates to `SMARTIMATE_BASE_URL/login?k={tenant}`. That starts iMATE's own Hosted UI authorization; it does not hand off a token or assume an existing HZCOG session is the current Cognito user. No iMATE OAuth broker, UserInfo, or validation endpoint is used.
 
-## Smart iMATE Session Revalidation
+DataMaster sign-out clears its local session and tenant cookie and returns to the tenant greeting. iMATE logout first commits revocation of that iMATE SQL session, attempts revocation of that session's refresh token, and then visits Cognito's browser logout. Provider failure does not restore the SQL session. DataMaster's local session is not cleared by iMATE logout, and iMATE's SQL session is not cleared by DataMaster logout. Cognito browser logout ends the shared Hosted UI SSO session; it is not a global sign-out of a separate upstream IdP.
 
-Smart iMATE can link to `/{tenantCode}?rs=1` when opening DataMaster.
+## Checks
 
-When `rs=1` is present, DataMaster calls Smart iMATE `/{tenantCode}/oauth2/userinfo` with the current session access token. A missing, invalid, source-mismatched, or different session restarts Smart iMATE SSO and returns to `/{tenantCode}`. A matching session continues to the tenant dashboard.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```sh
+npm test
+npx tsc --noEmit
+npm run build
+```

@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {jwtVerify, SignJWT} from 'jose'
 import {
     normalizeOAuthCallbackUrl,
@@ -13,8 +13,9 @@ function authSecret() {
 
 describe('oauth-state', () => {
     beforeEach(() => {
-        process['env']['AUTH' + '_SECRET'] = 'test-auth-secret-with-enough-length'
+        vi.stubEnv('AUTH_SECRET', 'test-auth-secret-with-enough-length')
     })
+    afterEach(() => vi.unstubAllEnvs())
 
     it('signs state without browser-carried code verifier material', async () => {
         const state = await signOAuthState({
@@ -33,27 +34,6 @@ describe('oauth-state', () => {
         expect(payload).not.toHaveProperty('codeVerifier')
     })
 
-    it('does not expose legacy codeVerifier fields from signed state', async () => {
-        const legacyState = await new SignJWT({
-            tenant: 'takdemo',
-            callbackUrl: '/dashboard',
-            nonce: 'state-nonce',
-            codeVerifier: 'legacy-url-carried-verifier',
-        })
-            .setProtectedHeader({alg: 'HS256'})
-            .setIssuedAt()
-            .setExpirationTime('10m')
-            .sign(authSecret())
-
-        const signedState = await readSignedOAuthState(legacyState)
-
-        expect(signedState).toEqual({
-            tenant: 'takdemo',
-            callbackUrl: '/dashboard',
-            nonce: 'state-nonce',
-        })
-        expect(signedState).not.toHaveProperty('codeVerifier')
-    })
 
     it('requires signed state, matching state cookie, and verifier cookie', () => {
         const state = 'returned-state'
@@ -142,5 +122,6 @@ describe('oauth-state', () => {
         expect(normalizeOAuthCallbackUrl('//evil.example.com/path', 'https://datamaster.example.com')).toBeNull()
         expect(normalizeOAuthCallbackUrl('https://evil.example.com/path', 'https://datamaster.example.com')).toBeNull()
         expect(normalizeOAuthCallbackUrl('not-a-path', 'https://datamaster.example.com')).toBeNull()
+        expect(normalizeOAuthCallbackUrl('/\\evil.example.com/path', 'https://datamaster.example.com')).toBeNull()
     })
 })

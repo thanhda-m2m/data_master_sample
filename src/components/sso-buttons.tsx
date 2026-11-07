@@ -23,12 +23,8 @@ export function SsoButton({target, tenant, label}: SsoButtonProps) {
 
             const data = await response.json()
 
-            if (data.redirectUrl) {
-                if (data.sessionActive) {
-                    window.location.href = data.redirectUrl
-                } else {
-                    window.location.href = data.redirectUrl
-                }
+            if (typeof data.redirectUrl === 'string' && data.redirectUrl !== '') {
+                window.location.href = data.redirectUrl
             }
         } catch (error) {
             console.error('SSO button error:', error)

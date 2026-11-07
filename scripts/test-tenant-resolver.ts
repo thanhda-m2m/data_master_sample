@@ -1,18 +1,17 @@
 /**
  * Integration test script for tenant-resolver.
- * Run with: node --loader tsx scripts/test-tenant-resolver.ts
- * Or: tsx scripts/test-tenant-resolver.ts
+ * Run with: npx tsx --env-file=.env.local scripts/test-tenant-resolver.ts thanhda
  */
 
 import { resolveTenantConfigFromDb, listTenantsFromDb, clearTenantCache, invalidateTenantCache } from '../src/lib/tenant-resolver'
 
 async function testTenantResolver() {
+  const tenant = process.argv[2] || 'thanhda'
   console.log('=== Tenant Resolver Integration Tests ===\n')
 
-  // Test 1: Resolve takdemo tenant
-  console.log('Test 1: Resolve takdemo tenant config')
+  console.log(`Test 1: Resolve ${tenant} tenant config`)
   const startTime1 = Date.now()
-  const config1 = await resolveTenantConfigFromDb('takdemo')
+  const config1 = await resolveTenantConfigFromDb(tenant)
   const duration1 = Date.now() - startTime1
 
   if (config1) {
@@ -20,7 +19,6 @@ async function testTenantResolver() {
     console.log(`  Login ID: ${config1.loginId}`)
     console.log(`  User Pool ID: ${config1.userPoolId}`)
     console.log(`  Client ID: ${config1.clientId}`)
-    console.log(`  Client Secret: ${config1.clientSecret.substring(0, 10)}...`)
     console.log(`  Region: ${config1.region}`)
     console.log(`  Issuer: ${config1.issuer}`)
     console.log(`  Duration: ${duration1}ms (DB query)`)
@@ -32,7 +30,7 @@ async function testTenantResolver() {
   // Test 2: Cache hit (should be fast)
   console.log('\nTest 2: Cache hit test')
   const startTime2 = Date.now()
-  const config2 = await resolveTenantConfigFromDb('takdemo')
+  const config2 = await resolveTenantConfigFromDb(tenant)
   const duration2 = Date.now() - startTime2
 
   if (config2 && duration2 < 5) {
@@ -68,9 +66,9 @@ async function testTenantResolver() {
 
   // Test 5: Cache invalidation
   console.log('\nTest 5: Cache invalidation')
-  invalidateTenantCache('takdemo')
+  invalidateTenantCache(tenant)
   const startTime5 = Date.now()
-  const config5 = await resolveTenantConfigFromDb('takdemo')
+  const config5 = await resolveTenantConfigFromDb(tenant)
   const duration5 = Date.now() - startTime5
 
   if (config5) {
@@ -84,7 +82,7 @@ async function testTenantResolver() {
   console.log('\nTest 6: Clear entire cache')
   clearTenantCache()
   const startTime6 = Date.now()
-  const config6 = await resolveTenantConfigFromDb('takdemo')
+  const config6 = await resolveTenantConfigFromDb(tenant)
   const duration6 = Date.now() - startTime6
 
   if (config6) {

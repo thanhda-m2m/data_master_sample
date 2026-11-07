@@ -3,39 +3,16 @@
  * Tenant configs are loaded from database (buscomps + bkmasters tables).
  */
 
-/**
- * Cognito credentials JSON structure stored in bkmasters.cognito_credentials.
- * Example: {"datamaster": {"app_client_id": "...", "app_client_secret": "..."}}
- */
-export interface CognitoCredentials {
-    datamaster?: {
-        app_client_id?: string
-        app_client_secret?: string
-    }
-}
-
-/**
- * Full tenant OAuth configuration derived from database.
- * Used by NextAuth.js providers and middleware.
- */
 export interface TenantConfig {
-    authMode: 'cognito' | 'smartimate_local'
-    loginId: string // tenant code (buscomps.loginid)
-    userPoolId: string // Cognito User Pool ID
-    clientId: string // OAuth app client ID (from JSON)
-    clientSecret: string // OAuth app client secret (from JSON)
-    region: string // AWS region (bkmasters.cognito_region)
-    issuer: string // https://cognito-idp.{region}.amazonaws.com/{userPoolId}
-    authorizationUrl: string // OAuth authorization endpoint
-    tokenUrl: string // OAuth token endpoint
-    userInfoUrl: string // OAuth userinfo endpoint
-    cognitoAuthorizeUrl: string // Backward-compatible alias
-    cognitoTokenUrl: string // Backward-compatible alias
-    cognitoUserInfoUrl: string // Backward-compatible alias
-    jwksUri: string // Cognito JWKS endpoint
-    smartimateAuthorizeUrl: string // Smart iMATE authorize endpoint
-    smartimateTokenUrl: string // Smart iMATE token endpoint
-    smartimateValidateUrl: string // Smart iMATE validate endpoint
+    loginId: string
+    userPoolId: string
+    clientId: string
+    clientSecret: string
+    region: string
+    issuer: string
+    authorizationUrl: string
+    tokenUrl: string
+    jwksUri: string
 }
 
 /**
